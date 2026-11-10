@@ -1,0 +1,153 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>提交任务 · 关键词作战台</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="app-header" id="app-header"></header>
+<main class="wrap">
+  <section class="card">
+    <h2>新建关键词作战任务</h2>
+    <p class="desc">输入要分析的 ASIN，上传亚马逊「商品推广_搜索词」报表，工人会在后台把关键词数据补齐并生成作战总表。</p>
+    <div class="row">
+      <div class="col">
+        <label>ASIN（10 位，B0 开头）
+          <input id="asin" type="text" maxlength="10" placeholder="B09V366BDY" autocomplete="off">
+        </label>
+      </div>
+      <div class="col">
+        <label>广告报表（.xlsx 或 .csv，最大 10 MB）
+          <input id="file" type="file" accept=".xlsx,.csv">
+        </label>
+      </div>
+    </div>
+    <div class="field-note">提交顺序：先传报表到收件箱，传成功才登记任务。全量 200 词一般要跑 10–30 分钟，属正常。</div>
+    <p id="msg" class="msg" hidden></p>
+    <div style="margin-top:14px">
+      <button id="btn-submit" class="btn btn-primary" type="button">提交任务</button>
+    </div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>我的任务</h2>
+      <span class="muted" id="last-refresh" style="font-size:12px"></span>
+      <span class="spacer"></span>
+      <button id="btn-refresh" class="btn btn-sm" type="button">手动刷新</button>
+    </div>
+    <div class="table-scroll">
+      <table>
+        <thead><tr>
+          <th style="width:150px">提交时间</th>
+          <th style="width:130px">ASIN</th>
+          <th style="width:96px">状态</th>
+          <th style="width:260px">失败原因</th>
+          <th style="width:110px">报告</th>
+        </tr></thead>
+        <tbody id="task-body"><tr><td colspan="5" class="empty">加载中…</td></tr></tbody>
+      </table>
+    </div>
+    <div class="field-note">每 30 秒自动刷新一次；最多显示最近 10 条。</div>
+  </section>
+</main>
+<script src="../assets/config.js"></script>
+<script src="../assets/supabase.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+(function () {
+  'use strict';
+  var C = window.APP_CONFIG;
+  var asinInput = document.getElementById('asin');
+  var fileInput = document.getElementById('file');
+  var submitBtn = document.getElementById('btn-submit');
+  var refreshBtn = document.getElementById('btn-refresh');
+  var body = document.getElementById('task-body');
+  var session = null;
+
+  function tag(s) {
+    var map = { '待处理': 'tag-wait', '进行中': 'tag-run', '已完成': 'tag-done', '失败': 'tag-fail' };
+    return '<span class="tag ' + (map[s] || 'tag-wait') + '">' + window.esc(s || '—') + '</span>';
+  }
+
+  async function loadTasks() {
+    if (!session) return;
+    var r = await window.sb.from(C.TASK_TABLE).select('*')
+      .order('created_at', { ascending: false }).limit(C.PAGE_SIZE || 10);
+    if (r.error) {
+      body.innerHTML = '<tr><td colspan="5" class="empty">读任务失败：' + window.esc(window.humanError(r.error)) + '</td></tr>';
+      return;
+    }
+    var rows = r.data || [];
+    if (!rows.length) { body.innerHTML = '<tr><td colspan="5" class="empty">还没有任务，上面提交一条试试</td></tr>'; }
+    else {
+      body.innerHTML = rows.map(function (t) {
+        var reason = t.status === '失败' ? (t.error_reason || '未说明') : '—';
+        var report = (t.status === '已完成' && t.report_url)
+          ? '<a class="btn btn-sm" href="' + window.APP_BASE + 'report/?task=' + encodeURIComponent(t.id) + '">查看报告</a>'
+          : '<span class="muted">—</span>';
+        return '<tr><td>' + window.esc(window.fmtTime(t.created_at)) + '</td>'
+          + '<td>' + window.esc(t.asin) + '</td>'
+          + '<td>' + tag(t.status) + '</td>'
+          + '<td title="' + window.esc(reason) + '">' + window.esc(reason.length > 34 ? reason.slice(0, 34) + '…' : reason) + '</td>'
+          + '<td>' + report + '</td></tr>';
+      }).join('');
+    }
+    document.getElementById('last-refresh').textContent = '最后刷新 ' + new Date().toLocaleTimeString('zh-CN');
+  }
+
+  submitBtn.onclick = async function () {
+    if (!session) { window.showMsg('msg', '登录状态失效了，请重新登录', 'err'); return; }
+    var asin = asinInput.value.trim().toUpperCase();
+    if (!/^B0[A-Z0-9]{8}$/.test(asin)) { window.showMsg('msg', 'ASIN 得是 10 位、B0 开头，例如 B09V366BDY', 'err'); return; }
+    var file = fileInput.files && fileInput.files[0];
+    if (!file) { window.showMsg('msg', '还没选广告报表', 'err'); return; }
+    var ext = (file.name.split('.').pop() || '').toLowerCase();
+    if (['xlsx', 'csv'].indexOf(ext) < 0) { window.showMsg('msg', '只收 .xlsx 或 .csv 文件', 'err'); return; }
+    if (file.size > (C.MAX_UPLOAD_BYTES || 10485760)) { window.showMsg('msg', '文件超过 10 MB 了，先精简一下再传', 'err'); return; }
+
+    submitBtn.disabled = true;
+    window.showMsg('msg', '正在上传报表…', 'info');
+    var id = crypto.randomUUID();
+    var storagePath = session.user.id + '/' + id + '.' + ext;
+    try {
+      var up = await window.sb.storage.from(C.STORAGE_BUCKET).upload(storagePath, file, {
+        contentType: ext === 'csv' ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+        upsert: false
+      });
+      if (up.error) throw up.error;
+      window.showMsg('msg', '报表上传好了，正在登记任务…', 'info');
+      var ins = await window.sb.from(C.TASK_TABLE).insert({
+        id: id,
+        user_id: session.user.id,
+        asin: asin,
+        report_path: storagePath,
+        status: '待处理'
+      });
+      if (ins.error) throw ins.error;
+      window.showMsg('msg', '提交成功，工人接单后会开始跑。下面列表等一会儿刷新就能看到进度。', 'ok');
+      asinInput.value = '';
+      fileInput.value = '';
+      await loadTasks();
+    } catch (ex) {
+      window.showMsg('msg', '提交失败：' + window.humanError(ex), 'err');
+    } finally {
+      submitBtn.disabled = false;
+    }
+  };
+
+  refreshBtn.onclick = loadTasks;
+
+  (async function () {
+    session = await window.requireSession();
+    if (!session) return;
+    window.mountHeader('提交任务');
+    await loadTasks();
+    setInterval(loadTasks, C.REFRESH_MS || 30000);
+  })();
+})();
+</script>
+</body>
+</html>

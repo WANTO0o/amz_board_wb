@@ -1,9 +1,97 @@
 <!doctype html>
 <html lang="zh-CN">
 <head>
-  <meta charset="utf-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1">
-  <title>建设中</title>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>登录 · 关键词作战台</title>
+<link rel="stylesheet" href="assets/style.css">
 </head>
-<body>建设中</body>
+<body class="login-body">
+<main class="login-wrap">
+  <section class="card login-card">
+    <h1>关键词作战台</h1>
+    <p class="muted">登录后提交 ASIN 和广告报表，生成关键词作战总表</p>
+    <div class="tabs">
+      <button id="tab-login" class="tab active" type="button">登录</button>
+      <button id="tab-signup" class="tab" type="button">注册</button>
+    </div>
+    <form id="form" novalidate>
+      <label>邮箱
+        <input id="email" type="email" autocomplete="email" placeholder="you@example.com" required>
+      </label>
+      <label>密码
+        <input id="password" type="password" autocomplete="current-password" placeholder="至少 6 位" required>
+      </label>
+      <p id="hint" class="msg msg-ok" hidden></p>
+      <p id="err" class="msg msg-err" role="alert" hidden></p>
+      <button id="submit" class="btn btn-primary btn-block" type="submit">登录</button>
+    </form>
+    <p id="fatal" class="msg msg-err" hidden></p>
+  </section>
+  <p class="foot">登录、任务与报告都由 Supabase 门禁保管</p>
+</main>
+<script src="assets/config.js"></script>
+<script src="assets/supabase.js"></script>
+<script src="assets/app.js"></script>
+<script>
+(function () {
+  'use strict';
+  var mode = 'login';
+  var form = document.getElementById('form');
+  var email = document.getElementById('email');
+  var password = document.getElementById('password');
+  var submit = document.getElementById('submit');
+  var hint = document.getElementById('hint');
+  var err = document.getElementById('err');
+
+  function setMode(m) {
+    mode = m;
+    document.getElementById('tab-login').className = 'tab' + (m === 'login' ? ' active' : '');
+    document.getElementById('tab-signup').className = 'tab' + (m === 'signup' ? ' active' : '');
+    submit.textContent = m === 'login' ? '登录' : '注册';
+    password.autocomplete = m === 'login' ? 'current-password' : 'new-password';
+    err.hidden = true;
+    hint.hidden = true;
+  }
+  document.getElementById('tab-login').onclick = function () { setMode('login'); };
+  document.getElementById('tab-signup').onclick = function () { setMode('signup'); };
+
+  if (window.sb) {
+    window.sb.auth.getSession().then(function (r) {
+      if (r.data && r.data.session) location.replace(window.APP_BASE + 'tool/');
+    });
+  }
+
+  form.onsubmit = async function (e) {
+    e.preventDefault();
+    if (!window.sb) { window.showMsg('err', '页面配置没加载好，请刷新重试', 'err'); return; }
+    err.hidden = true; hint.hidden = true;
+    var mail = email.value.trim();
+    var pwd = password.value;
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(mail)) { window.showMsg('err', '邮箱格式不太对', 'err'); return; }
+    if (!pwd || pwd.length < 6) { window.showMsg('err', '密码至少 6 位', 'err'); return; }
+    submit.disabled = true;
+    submit.textContent = mode === 'login' ? '登录中…' : '注册中…';
+    try {
+      if (mode === 'signup') {
+        var r = await window.sb.auth.signUp({ email: mail, password: pwd });
+        if (r.error) throw r.error;
+        if (r.data && r.data.session) { location.replace(window.APP_BASE + 'tool/'); return; }
+        setMode('login');
+        window.showMsg('hint', '注册成功。去邮箱点一下确认链接，再回来登录。', 'ok');
+      } else {
+        var s = await window.sb.auth.signInWithPassword({ email: mail, password: pwd });
+        if (s.error) throw s.error;
+        location.replace(window.APP_BASE + 'tool/');
+      }
+    } catch (ex) {
+      window.showMsg('err', window.humanError(ex), 'err');
+    } finally {
+      submit.disabled = false;
+      submit.textContent = mode === 'login' ? '登录' : '注册';
+    }
+  };
+})();
+</script>
+</body>
 </html>

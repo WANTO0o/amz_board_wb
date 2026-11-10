@@ -1,0 +1,85 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>查看报告 · 关键词作战台</title>
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="app-header" id="app-header"></header>
+<main class="wrap">
+  <section class="card">
+    <div class="card-head">
+      <h2>关键词作战总表</h2>
+      <span class="spacer"></span>
+      <a class="btn btn-sm" id="back" href="#">返回工具页</a>
+    </div>
+    <p class="desc" id="meta">正在读取任务…</p>
+    <p id="msg" class="msg" hidden></p>
+    <iframe id="frame" class="report-frame hidden" title="关键词作战总表" sandbox="allow-same-origin"></iframe>
+  </section>
+  <p class="foot">报告由后台工人生成，本页在线渲染，不会跳转到文件柜地址</p>
+</main>
+<script src="../assets/config.js"></script>
+<script src="../assets/supabase.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+(function () {
+  'use strict';
+  var C = window.APP_CONFIG;
+  var frame = document.getElementById('frame');
+  var meta = document.getElementById('meta');
+  var msg = document.getElementById('msg');
+  document.getElementById('back').href = window.APP_BASE + 'tool/';
+  var taskId = new URLSearchParams(location.search).get('task');
+
+  frame.onload = function () {
+    try {
+      var d = frame.contentDocument;
+      var h = d && d.documentElement ? d.documentElement.scrollHeight : 0;
+      frame.style.height = Math.max(h + 40, 520) + 'px';
+    } catch (e) { frame.style.height = '900px'; }
+  };
+
+  async function load() {
+    if (!taskId) { window.showMsg('msg', '网址里没有任务号，从工具页点「查看报告」进来吧', 'err'); return; }
+    if (!window.sb) { window.showMsg('msg', '页面配置没加载好，请刷新重试', 'err'); return; }
+    var r = await window.sb.from(C.TASK_TABLE).select('*').eq('id', taskId).maybeSingle();
+    if (r.error) { window.showMsg('msg', '读取任务失败：' + window.humanError(r.error), 'err'); return; }
+    var t = r.data;
+    if (!t) { window.showMsg('msg', '没找到这个任务，可能不是你提交的，或者任务号写错了', 'err'); return; }
+    meta.textContent = 'ASIN ' + t.asin + ' · 提交于 ' + window.fmtTime(t.created_at) + ' · 状态：' + t.status;
+
+    if (t.status === '失败') { window.showMsg('msg', '这个任务失败了：' + (t.error_reason || '未说明原因'), 'err'); return; }
+    if (t.status !== '已完成' || !t.report_url) {
+      window.showMsg('msg', '报告还在生成中（全量 200 词一般 10–30 分钟），这页会每 30 秒自动重试一次', 'info');
+      return;
+    }
+    window.hideMsg('msg');
+    window.showMsg('msg', '正在取回报告…', 'info');
+    try {
+      var res = await fetch(t.report_url, { method: 'GET' });
+      if (!res.ok) throw new Error('报告取回失败 HTTP ' + res.status);
+      var html = await res.text();
+      frame.srcdoc = html;
+      frame.classList.remove('hidden');
+      window.hideMsg('msg');
+    } catch (ex) {
+      window.showMsg('msg', '报告渲染失败：' + window.humanError(ex), 'err');
+    }
+  }
+
+  (async function () {
+    var s = await window.requireSession();
+    if (!s) return;
+    window.mountHeader('查看报告');
+    await load();
+    setInterval(function () {
+      if (frame.classList.contains('hidden')) load();
+    }, C.REFRESH_MS || 30000);
+  })();
+})();
+</script>
+</body>
+</html>
