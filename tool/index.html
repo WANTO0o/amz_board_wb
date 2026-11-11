@@ -11,11 +11,19 @@
 <main class="wrap">
   <section class="card">
     <h2>新建关键词作战任务</h2>
-    <p class="desc">输入要分析的 ASIN，上传亚马逊「商品推广_搜索词」报表，工人会在后台把关键词数据补齐并生成作战总表。</p>
+    <p class="desc">输入要分析的 ASIN，上传亚马逊「商品推广_搜索词」报表，工人会在后台把关键词数据补齐并生成作战总表。要出「竞对对比」模块，就加上 3–5 家竞对 ASIN（不加也能跑，报告只出 01–03）。</p>
     <div class="row">
       <div class="col">
-        <label>ASIN（10 位，B0 开头）
+        <label>自己 ASIN（10 位，B0 开头）
           <input id="asin" type="text" maxlength="10" placeholder="B09V366BDY" autocomplete="off">
+        </label>
+        <div class="comp-block">
+          <div class="comp-head">竞对 ASIN（选填，最多 5 家；从报告里的候选名单挑）</div>
+          <div id="comp-rows"></div>
+          <button id="btn-add-comp" class="btn btn-sm btn-ghost" type="button">＋ 添加竞对 ASIN</button>
+        </div>
+        <label style="margin-top:12px">核心关键词（选填，不填则用总表流量第一的词）
+          <input id="core-kw" type="text" maxlength="80" placeholder="例如 led strip lights" autocomplete="off">
         </label>
       </div>
       <div class="col">
@@ -24,7 +32,7 @@
         </label>
       </div>
     </div>
-    <div class="field-note">提交顺序：先传报表到收件箱，传成功才登记任务。全量 200 词一般要跑 10–30 分钟，属正常。</div>
+    <div class="field-note">提交顺序：先传报表到收件箱，传成功才登记任务。填了竞对会先出 01–03 报告，竞对对比的品类特征清单清洗好草案后等你确认再点亮。</div>
     <p id="msg" class="msg" hidden></p>
     <div style="margin-top:14px">
       <button id="btn-submit" class="btn btn-primary" type="button">提交任务</button>
@@ -65,7 +73,37 @@
   var submitBtn = document.getElementById('btn-submit');
   var refreshBtn = document.getElementById('btn-refresh');
   var body = document.getElementById('task-body');
+  var compRows = document.getElementById('comp-rows');
+  var addCompBtn = document.getElementById('btn-add-comp');
+  var coreKwInput = document.getElementById('core-kw');
+  var MAX_COMP = 5;
   var session = null;
+
+  // ---- 竞对 ASIN 可加行列表（全期唯一动前台的地方）----
+  function addCompRow() {
+    if (compRows.children.length >= MAX_COMP) {
+      window.showMsg('msg', '竞对最多加 ' + MAX_COMP + ' 家，多了报告会太挤', 'err');
+      return;
+    }
+    var div = document.createElement('div');
+    div.className = 'comp-row';
+    div.innerHTML = '<input class="comp-asin" type="text" maxlength="10" placeholder="竞对 ASIN" autocomplete="off">'
+      + '<span class="comp-role">竞对</span>'
+      + '<button class="comp-del" type="button" title="删掉这行">×</button>';
+    div.querySelector('.comp-del').onclick = function () { div.remove(); };
+    compRows.appendChild(div);
+    div.querySelector('.comp-asin').focus();
+  }
+  addCompBtn.onclick = addCompRow;
+
+  function collectCompetitors() {
+    var list = [];
+    Array.prototype.forEach.call(compRows.querySelectorAll('.comp-asin'), function (inp) {
+      var v = inp.value.trim().toUpperCase();
+      if (v) list.push(v);
+    });
+    return list;
+  }
 
   function tag(s) {
     var map = { '待处理': 'tag-wait', '进行中': 'tag-run', '已完成': 'tag-done', '失败': 'tag-fail' };
@@ -102,6 +140,19 @@
     if (!session) { window.showMsg('msg', '登录状态失效了，请重新登录', 'err'); return; }
     var asin = asinInput.value.trim().toUpperCase();
     if (!/^B0[A-Z0-9]{8}$/.test(asin)) { window.showMsg('msg', 'ASIN 得是 10 位、B0 开头，例如 B09V366BDY', 'err'); return; }
+    var compAsins = collectCompetitors();
+    if (compAsins.length) {
+      if (compAsins.length > MAX_COMP) { window.showMsg('msg', '竞对最多 ' + MAX_COMP + ' 家', 'err'); return; }
+      for (var ci = 0; ci < compAsins.length; ci++) {
+        if (!/^B0[A-Z0-9]{8}$/.test(compAsins[ci])) {
+          window.showMsg('msg', '竞对 ASIN 也要是 10 位、B0 开头：' + compAsins[ci], 'err'); return;
+        }
+      }
+      if (new Set(compAsins).size !== compAsins.length) { window.showMsg('msg', '竞对列表里有重复的 ASIN', 'err'); return; }
+      if (compAsins.indexOf(asin) >= 0) { window.showMsg('msg', '竞对列表里混进了自己 ASIN，去掉它', 'err'); return; }
+    }
+    var coreKw = coreKwInput.value.trim();
+    if (coreKw.length > 80) { window.showMsg('msg', '核心关键词太长了（上限 80 字）', 'err'); return; }
     var file = fileInput.files && fileInput.files[0];
     if (!file) { window.showMsg('msg', '还没选广告报表', 'err'); return; }
     var ext = (file.name.split('.').pop() || '').toLowerCase();
@@ -124,12 +175,18 @@
         user_id: session.user.id,
         asin: asin,
         report_path: storagePath,
+        competitor_asins: compAsins.length ? compAsins.join(',') : null,
+        core_keyword: coreKw || null,
         status: '待处理'
       });
       if (ins.error) throw ins.error;
-      window.showMsg('msg', '提交成功，工人接单后会开始跑。下面列表等一会儿刷新就能看到进度。', 'ok');
+      window.showMsg('msg', compAsins.length
+        ? '提交成功（竞对 ' + compAsins.length + ' 家）。工人接单后先出 01–03，竞对对比那节等你确认特征清单后点亮。'
+        : '提交成功，工人接单后会开始跑。下面列表等一会儿刷新就能看到进度。', 'ok');
       asinInput.value = '';
       fileInput.value = '';
+      compRows.innerHTML = '';
+      coreKwInput.value = '';
       await loadTasks();
     } catch (ex) {
       window.showMsg('msg', '提交失败：' + window.humanError(ex), 'err');
