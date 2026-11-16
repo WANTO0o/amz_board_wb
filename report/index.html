@@ -103,6 +103,7 @@
     '.rp-steps{flex:1 1 100%;font-size:11.5px;color:#6b7280;overflow-wrap:anywhere;word-break:break-word}',
     '.rp-goto a{flex:0 0 auto;display:inline-flex;align-items:center;padding:5px 12px;border-radius:7px;background:#2563eb;color:#fff;font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap}',
     '.rp-goto a:hover{background:#1d4ed8;text-decoration:none}',
+    '.rp-legacy{margin:0 0 14px}',
     '@media(max-width:760px){.rp-todo{display:none}.rp-goto-txt{flex-basis:100%}}'
   ].join('\n');
 
@@ -207,8 +208,8 @@
   // 幂等：每次自动刷新、每次 srcdoc 重建后都能重跑，先清掉自己上次注入的节点
   function decorate() {
     var d;
-    try { d = frame.contentDocument; } catch (e) { return; }
-    if (!d || !d.body || !d.querySelector('.page')) return;
+    try { d = frame.contentDocument; } catch (e) { renderProgress(); return; }
+    if (!d || !d.body) { renderProgress(); return; }
     Array.prototype.forEach.call(d.querySelectorAll('[data-rp-inject]'), function (el) {
       if (el.parentNode) el.parentNode.removeChild(el);
     });
@@ -217,11 +218,17 @@
     st.textContent = RP_CSS;
     d.head.appendChild(st);
 
+    // 骨架改造前的早期报告没有模块菜单（只有 01 总表）：按正文里有没有模块名判定点亮，
+    // 并在报告顶部插一条全局跳转条，保证旧报告也能看到进度与去操作台的入口。
+    var legacy = !d.querySelector('.page');
+    var bodyText = d.body.innerText || d.body.textContent || '';
     reportReady = {};
     MODULES.forEach(function (m) {
       var label = d.querySelector('.mi[for="m' + m.id + '"]');
       var pane = d.querySelector('.pane-' + m.id);
-      reportReady[m.id] = !!(label && label.querySelector('.mi-tag.on'));
+      reportReady[m.id] = legacy
+        ? bodyText.indexOf(m.name) >= 0
+        : !!(label && label.querySelector('.mi-tag.on'));
       var s = stateOf(m.id);
       if (!s.need) return;
       if (label) {
@@ -243,6 +250,18 @@
         else pane.insertBefore(box, pane.firstChild);
       }
     });
+    if (legacy) {
+      var missing = MODULES.filter(function (m) { return !reportReady[m.id]; })
+        .map(function (m) { return m.id + ' ' + m.name; }).join('、');
+      var lb = d.createElement('div');
+      lb.setAttribute('data-rp-inject', '1');
+      lb.className = 'rp-goto rp-legacy';
+      lb.innerHTML = '<span class="rp-goto-txt"><b>这是早期格式的报告，只有已出模块的正文</b>：'
+        + '这一版没有模块切换菜单，完整进度和后续确认都在模块进度页。</span>'
+        + '<span class="rp-steps">还没出的模块：' + esc(missing || '无') + '</span>'
+        + '<a data-rp-goto="1" target="_top" href="' + esc(stepsUrl()) + '">去模块进度页 →</a>';
+      d.body.insertBefore(lb, d.body.firstChild);
+    }
     d.addEventListener('click', gotoHandler, true);
     d.addEventListener('change', changeHandler, true);
     renderProgress();
