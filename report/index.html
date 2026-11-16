@@ -169,16 +169,17 @@
   }
 
   function gotoBoxHtml(m, s) {
+    function stepLabel(t) { return (t.module ? t.module + '/' : '') + t.step; }
     var head = s.ready
       ? (s.fail ? '这一节已出报告，但有步骤失败' : '这一节已出报告，还有步骤待确认')
       : '这一节还没出报告';
     var detail = [];
     if (s.list) {
       s.list.fail.forEach(function (t) {
-        detail.push(t.step + ' 失败' + (t.error_reason
+        detail.push(stepLabel(t) + ' 失败' + (t.error_reason
           ? '：' + String(t.error_reason).slice(0, 60) : '，可单项重试'));
       });
-      s.list.todo.forEach(function (t) { detail.push(t.step + ' ' + t.status); });
+      s.list.todo.forEach(function (t) { detail.push(stepLabel(t) + ' ' + t.status); });
       if (!s.list.fail.length && !s.list.todo.length && !s.ready && s.list.off) {
         detail.push('前置步骤还没开放，先完成上一步');
       }
@@ -210,6 +211,9 @@
     var d;
     try { d = frame.contentDocument; } catch (e) { renderProgress(); return; }
     if (!d || !d.body) { renderProgress(); return; }
+    // 没有 src 的空 iframe 会先 onload 一次 about:blank，别拿它把进度算成 0/6。
+    // 真正的报告文档（新格式或早期格式）body 里一定有内容，等下一次 onload / 兜底再装饰。
+    if (!d.body.children.length) return;
     Array.prototype.forEach.call(d.querySelectorAll('[data-rp-inject]'), function (el) {
       if (el.parentNode) el.parentNode.removeChild(el);
     });
@@ -301,7 +305,7 @@
       frame.srcdoc = html;
       frame.classList.remove('hidden');
       lastRev = rev;
-      setTimeout(decorate, 0);
+      setTimeout(decorate, 120);   // srcdoc 解析晚于 onload 时兜底
       window.hideMsg('msg');
     } catch (ex) {
       window.showMsg('msg', '报告渲染失败：' + window.humanError(ex), 'err');
