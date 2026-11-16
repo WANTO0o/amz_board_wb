@@ -7,27 +7,7 @@
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="../assets/style.css">
 <style>
-  /* 模块进度：六个模块一张卡，点任意模块直接去操作台对应位置 */
-  .rp-bar { height:8px; border-radius:999px; background:#eef1f5; overflow:hidden; margin:2px 0 14px; }
-  .rp-bar i { display:block; height:100%; width:0; background:#2563eb; border-radius:999px; transition:width .3s; }
-  .rp-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
-  .rp-cell {
-    display:flex; align-items:center; gap:9px; min-width:0; line-height:1.35;
-    border:1px solid var(--line); border-radius:8px; padding:9px 10px; background:#fafbfd; color:var(--text);
-  }
-  .rp-cell:hover { border-color:#2563eb; background:#f5f8ff; text-decoration:none; }
-  .rp-cell.is-todo { border-color:#f3d39a; background:#fffaf0; }
-  .rp-cell.is-fail { border-color:#f3b4ae; background:#fff5f4; }
-  .rp-cell-num { flex:0 0 auto; font:600 11px/1 ui-monospace,Menlo,monospace; color:#94a3b8; }
-  .rp-cell-main { flex:1 1 auto; min-width:0; }
-  .rp-cell-name { display:block; font-size:12.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .rp-cell-state { display:block; font-size:11px; color:var(--muted); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
-  .rp-cell.is-done .rp-cell-state { color:#0f7a4d; }
-  .rp-cell.is-todo .rp-cell-state { color:#a35b06; }
-  .rp-cell.is-fail .rp-cell-state { color:#b02a20; }
-  .rp-tip { margin:12px 0 0; font-size:12px; color:var(--muted); line-height:1.7; }
   @media (max-width:620px) {
-    .rp-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
     .card-head { flex-wrap:wrap; }
   }
 </style>
@@ -44,16 +24,6 @@
     </div>
     <p class="desc" id="meta">正在读取任务…</p>
     <p id="msg" class="msg" hidden></p>
-  </section>
-
-  <section class="card" id="prog-card" hidden>
-    <div class="card-head">
-      <h2>六个模块的进度</h2>
-      <span class="muted" id="prog-sum" style="font-size:12px">读取中…</span>
-    </div>
-    <div class="rp-bar"><i id="prog-fill"></i></div>
-    <div class="rp-grid" id="prog-grid"></div>
-    <p class="rp-tip" id="prog-tip"></p>
   </section>
 
   <section class="card">
@@ -127,45 +97,16 @@
     stepState = r.error ? null : summarizeSteps(r.data || []);
   }
 
+  // 只用来决定「这个模块的详情里要不要插跳转条」，报告页顶部不再单独展示进度板块。
   function stateOf(id) {
     var ready = !!reportReady[id];
     var x = stepState && stepState[id];
     var fail = x ? x.fail.length : 0;
     var todo = x ? x.todo.length : 0;
-    var parts = [ready ? '报告已出' : '报告未出'];
-    if (!stepState) parts.push('步骤状态读不到');
-    else {
-      if (fail) parts.push(fail + ' 项失败可重试');
-      if (todo) parts.push(todo + ' 项待确认');
-      if (!fail && !todo && x.done) parts.push('步骤全部完成');
-      if (!fail && !todo && !ready && x.off) parts.push('前置步骤未开放');
-    }
     return {
       ready: ready, fail: fail, todo: todo, list: x,
-      cls: fail ? 'is-fail' : ((todo || !ready) ? 'is-todo' : 'is-done'),
-      text: parts.join(' · '),
       need: (!ready || fail > 0 || todo > 0)
     };
-  }
-
-  function renderProgress() {
-    var card = document.getElementById('prog-card');
-    if (!taskId) { card.hidden = true; return; }
-    card.hidden = false;
-    var rows = MODULES.map(function (m) { return { m: m, s: stateOf(m.id) }; });
-    var ready = rows.filter(function (r) { return r.s.ready; }).length;
-    var pending = rows.filter(function (r) { return r.s.need; }).length;
-    document.getElementById('prog-sum').textContent = '已出 ' + ready + ' / 6 个模块';
-    document.getElementById('prog-fill').style.width = (ready / 6 * 100).toFixed(1) + '%';
-    document.getElementById('prog-grid').innerHTML = rows.map(function (r) {
-      return '<a class="rp-cell ' + r.s.cls + '" title="' + esc(r.s.text) + '" href="' + esc(stepsUrl(r.m.id)) + '">'
-        + '<span class="rp-cell-num">' + r.m.id + '</span>'
-        + '<span class="rp-cell-main"><span class="rp-cell-name">' + esc(r.m.name) + '</span>'
-        + '<span class="rp-cell-state">' + esc(r.s.text) + '</span></span></a>';
-    }).join('');
-    document.getElementById('prog-tip').textContent = pending
-      ? '还有 ' + pending + ' 个模块没出报告或有步骤待处理：点上面的模块直接跳到模块进度页的对应位置；在报告里选中该模块，详情里也有跳转入口。'
-      : '六个模块已全部出报告，步骤也都完成。报告链接始终不变，后续点亮会自动刷新这一页。';
   }
 
   function gotoBoxHtml(m, s) {
@@ -209,9 +150,9 @@
   // 幂等：每次自动刷新、每次 srcdoc 重建后都能重跑，先清掉自己上次注入的节点
   function decorate() {
     var d;
-    try { d = frame.contentDocument; } catch (e) { renderProgress(); return; }
-    if (!d || !d.body) { renderProgress(); return; }
-    // 没有 src 的空 iframe 会先 onload 一次 about:blank，别拿它把进度算成 0/6。
+    try { d = frame.contentDocument; } catch (e) { return; }
+    if (!d || !d.body) return;
+    // 没有 src 的空 iframe 会先 onload 一次 about:blank，别在空文档上做任何注入。
     // 真正的报告文档（新格式或早期格式）body 里一定有内容，等下一次 onload / 兜底再装饰。
     if (!d.body.children.length) return;
     Array.prototype.forEach.call(d.querySelectorAll('[data-rp-inject]'), function (el) {
@@ -223,7 +164,7 @@
     d.head.appendChild(st);
 
     // 骨架改造前的早期报告没有模块菜单（只有 01 总表）：按正文里有没有模块名判定点亮，
-    // 并在报告顶部插一条全局跳转条，保证旧报告也能看到进度与去操作台的入口。
+    // 并在报告顶部插一条跳转条（早期报告模板不再改动）。
     var legacy = !d.querySelector('.page');
     var bodyText = d.body.innerText || d.body.textContent || '';
     reportReady = {};
@@ -268,7 +209,6 @@
     }
     d.addEventListener('click', gotoHandler, true);
     d.addEventListener('change', changeHandler, true);
-    renderProgress();
     setTimeout(resizeFrame, 0);
   }
 
@@ -285,11 +225,11 @@
 
     await loadSteps();
     if (t.status === '失败') {
-      reportReady = {}; renderProgress();
+      reportReady = {};
       window.showMsg('msg', '这个任务失败了：' + (t.error_reason || '未说明原因'), 'err'); return;
     }
     if (t.status !== '已完成' || !t.report_url) {
-      reportReady = {}; renderProgress();
+      reportReady = {};
       window.showMsg('msg', '报告还在生成中（全量 200 词一般 10–30 分钟），这页会每 30 秒自动重试一次', 'info');
       return;
     }
@@ -309,7 +249,6 @@
       window.hideMsg('msg');
     } catch (ex) {
       window.showMsg('msg', '报告渲染失败：' + window.humanError(ex), 'err');
-      renderProgress();
     }
   }
 
