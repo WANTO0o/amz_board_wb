@@ -12,14 +12,15 @@
 <main class="wrap">
   <section class="card">
     <h2>新建关键词作战任务</h2>
-    <p class="desc">输入要分析的 ASIN，上传亚马逊「商品推广_搜索词」报表，工人会在后台把关键词数据补齐并生成作战总表。01–03 自动出；04–06 需要你到「模块进度」页逐项确认，全部在网页上完成，不用切后台。换竞对后，可在每家竞对下面贴它的差评原文，05 步骤会带出来供你改写确认清单（只作参考，不自动判定、不抓评论接口）。</p>
+    <p class="desc">输入要分析的 ASIN，上传亚马逊「商品推广_搜索词」报表，工人会在后台把关键词数据补齐并生成作战总表。01–03 自动出；04–06 需要你到「模块进度」页逐项确认，全部在网页上完成，不用切后台。<strong>04 竞对对比和 05 图片与卖点诊断依赖竞对 ASIN，不填这两块不会生成</strong>（之后仍可在模块进度页补录）。换竞对后，可在每家竞对下面贴它的差评原文，05 步骤会带出来供你改写确认清单（只作参考，不自动判定、不抓评论接口）。</p>
     <div class="row">
       <div class="col">
         <label>自己 ASIN（10 位，B0 开头）
           <input id="asin" type="text" maxlength="10" placeholder="B09V366BDY" autocomplete="off">
         </label>
         <div class="comp-block">
-          <div class="comp-head">竞对 ASIN（选填，最多 5 家；从报告里的候选名单挑。每家下面可贴差评原文，带到 05 步骤给你改写清单用）</div>
+          <div class="comp-head">竞对 ASIN（最多 5 家；<strong>要出 04 / 05 请必填</strong>，从报告里的候选名单挑。每家下面可贴差评原文，带到 05 步骤给你改写清单用）</div>
+          <div class="need-comp" id="comp-warn">不填竞对也能提交，但本次只会生成 01–03；04 竞对对比、05 图片与卖点诊断不会生成。之后可到「模块进度」页 04 步骤补录竞对再补跑。</div>
           <div id="comp-rows"></div>
           <button id="btn-add-comp" class="btn btn-sm btn-ghost" type="button">＋ 添加竞对 ASIN</button>
         </div>
@@ -171,6 +172,17 @@
     if (['xlsx', 'csv'].indexOf(ext) < 0) { window.showMsg('msg', '只收 .xlsx 或 .csv 文件', 'err'); return; }
     if (file.size > (C.MAX_UPLOAD_BYTES || 10485760)) { window.showMsg('msg', '文件超过 10 MB 了，先精简一下再传', 'err'); return; }
 
+    // 没填竞对也能提交（只想出关键词总表的场景），但必须让用户明确知道 04/05 不会生成。
+    if (!compAsins.length && !window.confirm(
+      '你还没填竞对 ASIN。\n\n'
+      + '这次只会生成 01–03（关键词作战总表 / 自然位标杆 / 否定词清单），'
+      + '04 竞对对比和 05 图片与卖点诊断不会生成。\n\n'
+      + '报告生成后，可到「模块进度」页 04 步骤补录竞对 ASIN 和差评原文，再确认补跑。\n\n'
+      + '确定仍要提交吗？')) {
+      window.showMsg('msg', '已取消提交。点「＋ 添加竞对 ASIN」填上竞对，就能一次做全 01–05。', 'info');
+      return;
+    }
+
     submitBtn.disabled = true;
     window.showMsg('msg', '正在上传报表…', 'info');
     var id = crypto.randomUUID();
@@ -193,7 +205,9 @@
         status: '待处理'
       });
       if (ins.error) throw ins.error;
-      window.showMsg('msg', '提交成功。01–03 由工人自动生成；04–06 请在下面列表点「模块进度」逐项确认。', 'ok');
+      window.showMsg('msg', compAsins.length
+        ? '提交成功。01–03 由工人自动生成；04–06 请在下面列表点「模块进度」逐项确认。'
+        : '提交成功（未填竞对）。本次只出 01–03；04/05 请到「模块进度」页 04 步骤补录竞对后补跑。', 'ok');
       asinInput.value = '';
       fileInput.value = '';
       compRows.innerHTML = '';

@@ -142,7 +142,7 @@
       <span class="spacer"></span>
       <button id="btn-refresh" class="btn btn-sm" type="button">手动刷新</button>
     </div>
-    <p class="field-note">01–03 上传后自动生成。04–06 需要你在这一页确认：先看预估调用量，点确认后后台才开始花钱；任何一步失败都只重试那一步，不影响别的模块。报告链接始终不变，点亮后会自动刷新。</p>
+    <p class="field-note">01–03 上传后自动生成。04 竞对对比 / 05 图片诊断依赖竞对 ASIN：提交时没填的，可在步骤 1「竞对资料与清洗草案」里补录再补跑。04–06 需要你在这一页确认：先看预估调用量，点确认后后台才开始花钱；任何一步失败都只重试那一步，不影响别的模块。报告链接始终不变，点亮后会自动刷新。</p>
     <div id="steps">加载中…</div>
   </section>
 </main>
@@ -160,6 +160,7 @@
   var session = null;
   var editing = false;
   var stepMap = {};   // 按 step.id 存原始行，提交 05 时从这里取清单名，不把中文清单塞进 DOM 属性
+  var currentTask = null;  // 当前任务行；04 补录时要读自己的 ASIN 与已存的竞对差评
 
   // 步骤显示名与先后顺序：按业务流程排，不按 step 字段的字母序
   var STEP_META = {
@@ -512,6 +513,79 @@
     return '<div class="quota-box">' + head + '：' + esc(step.error_reason || '') + '</div>';
   }
 
+  // 04 阶段一：当初没填竞对时给补录口；已有竞对时只展示清单，补跑走通用确认按钮。
+  function phase1Form(step) {
+    var d = step.draft || {};
+    var list = d.competitorAsins || [];
+    var head = '<div class="step-meta">自己 ASIN ' + esc(d.asin || '')
+      + '，竞对 ' + esc(list.join('、') || '无') + '；核心词 ' + esc(d.coreKeyword || '') + '</div>';
+    if (list.length) return head;
+    return head
+      + '<div class="need-comp">这条任务当时没填竞对，04 竞对对比和 05 图片诊断因此没有生成。'
+      + '在这里补上竞对 ASIN（1–5 家）后先保存，再看预估点「确认并补跑 04」；不点确认不会花钱。</div>'
+      + '<div class="comp-block"><div class="comp-head">补录竞对 ASIN（每家下面可贴差评原文，供 05 改写清单参考；不会自动抓评论）</div>'
+      + '<div data-role="p1-rows"></div>'
+      + '<button class="btn btn-sm btn-ghost" type="button" data-role="p1-add">＋ 添加竞对 ASIN</button></div>'
+      + '<div class="btn-row"><button class="btn btn-primary btn-sm" type="button" data-savecomp="'
+      + esc(step.id) + '">保存竞对并解锁 04</button></div>';
+  }
+
+  function addP1Row(container, focus) {
+    if (container.querySelectorAll('[data-comp-row]').length >= 5) {
+      window.showMsg('msg', '竞对最多 5 家', 'err'); return;
+    }
+    var div = document.createElement('div');
+    div.className = 'comp-row';
+    div.setAttribute('data-comp-row', '1');
+    div.innerHTML = '<input class="comp-asin" type="text" maxlength="10" placeholder="竞对 ASIN" autocomplete="off">'
+      + '<span class="comp-role">竞对</span>'
+      + '<button class="comp-del" type="button" title="删掉这行">×</button>'
+      + '<textarea class="comp-reviews" rows="3" maxlength="4000" placeholder="这家竞对的差评原文（选填）：粘贴 1–3 星评论原话，05 步骤会原样带出供你改写确认清单"></textarea>';
+    div.querySelector('.comp-del').onclick = function () { div.remove(); markDirty(); };
+    div.querySelector('.comp-asin').oninput = markDirty;
+    div.querySelector('.comp-reviews').oninput = markDirty;
+    container.appendChild(div);
+    if (focus) div.querySelector('.comp-asin').focus();
+  }
+
+  // 保存竞对：只写任务表并把 04/phase1 从「跳过」解锁到「待确认」，零付费、不自动跑。
+  function saveCompetitors(btn) {
+    var card = btn.closest('.step-card');
+    var selfAsin = String((currentTask && currentTask.asin) || '').toUpperCase();
+    var list = [];
+    Array.prototype.forEach.call(card.querySelectorAll('[data-comp-row]'), function (row) {
+      var a = row.querySelector('.comp-asin');
+      var ta = row.querySelector('.comp-reviews');
+      var asin = a ? String(a.value || '').trim().toUpperCase() : '';
+      var reviews = ta ? String(ta.value || '').trim() : '';
+      if (asin || reviews) list.push({ asin: asin, reviews: reviews });
+    });
+    if (!list.length) { window.showMsg('msg', '至少填一家竞对 ASIN', 'err'); return; }
+    if (list.length > 5) { window.showMsg('msg', '竞对最多 5 家', 'err'); return; }
+    var seen = {};
+    for (var i = 0; i < list.length; i++) {
+      var a = list[i].asin;
+      if (!/^B0[A-Z0-9]{8}$/.test(a)) {
+        window.showMsg('msg', '竞对 ASIN 要 10 位、B0 开头：' + (a || '（填了差评但没写 ASIN）'), 'err'); return;
+      }
+      if (a === selfAsin) { window.showMsg('msg', '竞对里不能填自己的 ASIN', 'err'); return; }
+      if (seen[a]) { window.showMsg('msg', '竞对 ASIN 重复：' + a, 'err'); return; }
+      seen[a] = 1;
+    }
+    if (!window.confirm('把这 ' + list.length + ' 家竞对保存到这条任务？\n\n'
+      + '保存本身零付费，只会把 04 步骤从「跳过」解锁为「待确认」。'
+      + '之后还要你看过预估再点一次「确认并补跑 04」，后台才会抓资料（已抓过的 ASIN 复用留底，不重复扣费）。')) return;
+    submit('set_task_competitors', { p_task_id: taskId, p_competitors: list }, btn);
+  }
+
+  // 补跑 04 阶段一：不带清单，只带一个确认标记；后台重读任务表里刚补录的竞对。
+  function approve04Phase1(btn) {
+    submit('approve_module_step', {
+      p_step_id: btn.getAttribute('data-approve'),
+      p_decision: { competitorsConfirmed: true, confirmedFrom: '网页', confirmedAt: new Date().toISOString() }
+    }, btn);
+  }
+
   function renderStep(step) {
     var k = step.module + '/' + step.step;
     var meta = STEP_META[k] || { seq: 0, name: step.step };
@@ -520,18 +594,16 @@
     var ready05 = k === '05/batch' && d.ready === true && !!(d.checklistNames || []).length;
     // 06 润色是可选付费步骤：只有「待确认」且动作清单齐、还没润过才给提交；已润色不重复扣费。
     var ready06 = k === '06/polish' && d.ready === true && !!(d.actions || []).length && !d.polished;
+    // 04 阶段一补录竞对后回到「待确认」，允许点确认补跑；工人会重读任务表里的新竞对。
+    var readyPhase1 = k === '04/phase1' && step.status === '待确认' && !!(d.competitorAsins || []).length;
     var canWrite = ['待确认', '已完成'].indexOf(step.status) >= 0
-      && (k === '06/rules' || ready04 || ready05 || (ready06 && step.status === '待确认'));
+      && (k === '06/rules' || ready04 || ready05 || (ready06 && step.status === '待确认') || readyPhase1);
     var body = '';
     if (k === '06/rules') body = rulesForm(step);
     else if (k === '04/confirm') body = confirmForm04(step);
     else if (k === '05/batch') body = batchForm05(step);
     else if (k === '06/polish') body = polishForm06(step);
-    else if (k === '04/phase1') {
-      body = '<div class="step-meta">自己 ASIN ' + esc((step.draft || {}).asin || '') + '，竞对 '
-        + esc(((step.draft || {}).competitorAsins || []).join('、') || '无') + '；核心词 '
-        + esc((step.draft || {}).coreKeyword || '') + '</div>';
-    }
+    else if (k === '04/phase1') body = phase1Form(step);
     var btn = '';
     if (step.status === '失败') {
       // 04 失败后允许按「当前表里重新选好的判定」再提交一次，不用沿用上次那份不合规格的 decision
@@ -544,7 +616,10 @@
         btn = '<button class="btn btn-sm" type="button" data-retry="' + esc(step.id) + '">单项重试本步骤</button>';
       }
     } else if (canWrite) {
-      var label = k === '04/confirm'
+      var label = k === '04/phase1'
+        ? '确认并补跑 04（sorftime ' + (1 + (d.competitorAsins || []).length)
+          + ' 次 + 品类特征 1 次 + DeepSeek 1 次，已抓留底复用）'
+        : k === '04/confirm'
         ? (step.status === '已完成' ? '改判定并重跑 04（再花 DeepSeek 1 次）' : '确认清单并点亮 04（DeepSeek 1 次）')
         : (k === '05/batch'
           ? (step.status === '已完成' ? '改清单/竞对并重跑 05（会再花视觉请求）' : '一次确认并跑完 05（只补跑未完成的家）')
@@ -555,8 +630,8 @@
         + label + '</button>';
     } else if (step.status === '未开放') {
       var phase = (step.module === '06' ? 'P4' : 'P2');
-      var text = (k === '04/confirm') ? '先完成步骤 1（竞对资料与草案）'
-        : (k === '05/batch' ? '先点亮 04（竞对对比）'
+      var text = (k === '04/confirm') ? '先在步骤 1 补录竞对并出草案'
+        : (k === '05/batch' ? '先点亮 04（没竞对先在步骤 1 补录）'
           : (k === '06/polish' ? '先在步骤 1 出 06 动作清单' : phase + ' 开放提交'));
       btn = '<button class="btn btn-sm" type="button" disabled>' + text + '</button>';
     }
@@ -635,11 +710,22 @@
     Array.prototype.forEach.call(stepsBox.querySelectorAll('[data-approve]'), function (b) {
       b.onclick = function () {
         var k = b.closest('.step-card').getAttribute('data-step');
-        if (k === '04/confirm') approve04(b);
+        if (k === '04/phase1') approve04Phase1(b);
+        else if (k === '04/confirm') approve04(b);
         else if (k === '05/batch') approve05(b);
         else if (k === '06/polish') approve06Polish(b);
         else approve06(b);
       };
+    });
+    // 04 阶段一补录：动态加行、改动暂停自动刷新、保存走专用 RPC
+    Array.prototype.forEach.call(stepsBox.querySelectorAll('.step-card[data-step="04/phase1"]'), function (card) {
+      var rows = card.querySelector('[data-role="p1-rows"]');
+      if (!rows) return;
+      var add = card.querySelector('[data-role="p1-add"]');
+      if (add) add.onclick = function () { addP1Row(rows, true); };
+      if (!rows.children.length) addP1Row(rows, false);
+      var save = card.querySelector('[data-savecomp]');
+      if (save) save.onclick = function () { saveCompetitors(save); };
     });
     Array.prototype.forEach.call(stepsBox.querySelectorAll('[data-rule-num],[data-rule-text]'), function (el) {
       el.onchange = function () { syncRules(el); markDirty(); };
@@ -827,15 +913,20 @@
     try {
       var r = await window.sb.rpc(fn, args);
       if (r.error) throw r.error;
-      var okMsg = fn === 'retry_module_step'
-        ? '已登记单项重试，工人会在 30 秒内领取（05 只补跑未完成的家，已完成留底复用不重复扣费）'
-        : (args.p_decision && args.p_decision.keep
-          ? '确认已提交：工人会按你逐条确认的判定跑 04（DeepSeek 1 次），完成后报告自动点亮 04'
-          : (args.p_decision && args.p_decision.competitors
-            ? '05 一次确认已提交：自家整组图 → 逐家串行同框，每跑完一家立刻落盘；全部跑完自动发布并点亮 05'
-            : (args.p_decision && args.p_decision.polish
-              ? '润色确认已提交：DeepSeek 1 次，只写理由字段；动作结论与排序一字不动，报告会自动刷新'
-              : '确认已提交，工人会在 30 秒内执行')));
+      var okMsg = '确认已提交，工人会在 30 秒内执行';
+      if (fn === 'set_task_competitors') {
+        okMsg = '竞对已保存到任务，04 步骤已解锁为「待确认」（本次零付费）。请先看清预估，再点「确认并补跑 04」。';
+      } else if (fn === 'retry_module_step') {
+        okMsg = '已登记单项重试，工人会在 30 秒内领取（05 只补跑未完成的家，已完成留底复用不重复扣费）';
+      } else if (args.p_decision && args.p_decision.competitorsConfirmed) {
+        okMsg = '04 补跑已提交：工人 30 秒内抓竞对资料并出草案；跑完还要到步骤 2 逐条确认才点亮 04。';
+      } else if (args.p_decision && args.p_decision.keep) {
+        okMsg = '确认已提交：工人会按你逐条确认的判定跑 04（DeepSeek 1 次），完成后报告自动点亮 04';
+      } else if (args.p_decision && args.p_decision.competitors) {
+        okMsg = '05 一次确认已提交：自家整组图 → 逐家串行同框，每跑完一家立刻落盘；全部跑完自动发布并点亮 05';
+      } else if (args.p_decision && args.p_decision.polish) {
+        okMsg = '润色确认已提交：DeepSeek 1 次，只写理由字段；动作结论与排序一字不动，报告会自动刷新';
+      }
       window.showMsg('msg', okMsg, 'ok');
       editing = false;
       await load();
@@ -852,6 +943,7 @@
     if (t.error) { window.showMsg('msg', '读取任务失败：' + window.humanError(t.error), 'err'); return; }
     if (!t.data) { window.showMsg('msg', '没找到这个任务', 'err'); return; }
     var task = t.data;
+    currentTask = task;
     document.getElementById('meta').textContent = 'ASIN ' + task.asin + ' · 提交于 '
       + window.fmtTime(task.created_at) + ' · 状态：' + task.status + ' · 报告版本：' + (task.report_revision || 0);
     document.getElementById('report-link').innerHTML = task.report_url
