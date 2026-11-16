@@ -195,7 +195,10 @@
   function tag(status) {
     var cls = { '已完成': 'st-done', '待确认': 'st-wait', '已批准': 'st-run', '执行中': 'st-run',
       '失败': 'st-fail', '跳过': 'st-off', '未开放': 'st-off' }[status] || 'st-off';
-    return '<span class="step-tag ' + cls + '">' + esc(status) + '</span>';
+    // 数据层仍存「未开放」（SQL check 与工人判定都认它），只把页面文案换成人话：
+    // 它表示前置步骤的产出还没生成，不是功能没做。具体前置写在下方禁用按钮上。
+    var label = status === '未开放' ? '待前置完成' : status;
+    return '<span class="step-tag ' + cls + '">' + esc(label) + '</span>';
   }
   function estimateText(e) {
     if (!e) return '本步没有预估信息';
