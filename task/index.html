@@ -102,6 +102,8 @@
     .mod-side { width:100%; justify-content:flex-end; }
     .mod-body { margin-left:10px; padding-left:14px; }
     .step-card::before { left:-16px; width:16px; }
+    /* 基础 .btn 是 nowrap；06 这类长按钮在 375px 下会把整页撑出横向滚动，窄屏允许换行 */
+    .btn-row .btn { max-width:100%; white-space:normal; overflow-wrap:anywhere; word-break:break-word; text-align:center; }
   }
 </style>
 </head>
