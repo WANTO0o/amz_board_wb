@@ -63,6 +63,15 @@
   table.mini { width:100%; border-collapse:collapse; font-size:13px; }
   table.mini th, table.mini td { border-bottom:1px solid rgba(0,0,0,.08); padding:6px 8px; text-align:left; vertical-align:top; }
   .draft-box { background:#f8f9fb; border-radius:8px; padding:10px 12px; font-size:12px; max-height:260px; overflow:auto; }
+  /* 04 阶段二：逐条确认表 */
+  .f04-wrap { background:#f8f9fb; border:1px solid #e6eaf1; border-radius:8px; padding:6px 10px 10px; max-height:430px; overflow:auto; }
+  table.f04 { width:100%; border-collapse:collapse; font-size:12.5px; min-width:620px; }
+  table.f04 th, table.f04 td { border-bottom:1px solid rgba(0,0,0,.07); padding:7px 8px; text-align:left; vertical-align:top; }
+  table.f04 th { position:sticky; top:0; background:#f8f9fb; color:#475569; font-weight:600; white-space:nowrap; }
+  table.f04 select { width:100%; min-width:86px; box-sizing:border-box; }
+  .f04-desc { font-size:11px; color:#6b7280; line-height:1.45; margin-top:3px; max-width:340px; overflow-wrap:anywhere; }
+  .f04-draft { font-size:11.5px; padding:1px 7px; border-radius:999px; background:#e8efff; color:#1d4ed8; white-space:nowrap; }
+  .f04-count { font-size:12px; color:#475569; margin:8px 0 0; line-height:1.6; }
   .btn-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
   @media (max-width:620px) {
     .form-grid { grid-template-columns:1fr; }
@@ -177,21 +186,52 @@
       + '<textarea class="rules-json" data-role="rules-json" spellcheck="false">' + esc(JSON.stringify(r, null, 2)) + '</textarea></details>';
   }
 
+  // 04 阶段二：默认带出阶段一清洗草案，三档逐条可改；提交只发 keep/drop/gap 三个名字数组。
   function confirmForm04(step) {
     var d = step.draft || {};
-    var list = d.draft || [];
-    if (!list.length) return '<div class="draft-box">阶段一还没有出清洗草案（可能卡在额度），先重试上一步。</div>';
-    var rows = list.map(function (x, i) {
+    var items = d.items || [];
+    if (!items.length) {
+      return '<div class="draft-box">阶段一还没有出清洗草案（可能卡在额度），先完成步骤 1：有失败就点「单项重试本步骤」。</div>';
+    }
+    if (!d.ready) {
+      return '<div class="quota-box">竞对档案不齐，不能确认：'
+        + esc((d.missingProductData || []).join('、') || ('档案 ' + (d.profiles || 0) + ' 行'))
+        + '。请回步骤 1 补抓缺的 ASIN。</div>';
+    }
+    var rows = items.map(function (x, i) {
       var v = String(x.verdict || '保留');
-      return '<tr><td>' + (i + 1) + '</td><td>' + esc(x.feature) + '</td>'
-        + '<td><select disabled data-f04="' + i + '">'
+      // 「你的判定」放第 2 列：宽表要横滚时，用户不用先滚到最右边才能改判定。
+      return '<tr><td>' + (i + 1) + '</td>'
+        + '<td><select data-f04-verdict="' + i + '" data-f04-name="' + esc(x.name)
+        + '" data-f04-draft="' + esc(v) + '">'
         + ['保留', '剔除', '缺口'].map(function (o) {
-          return '<option' + (o === v ? ' selected' : '') + '>' + o + '</option>';
-        }).join('') + '</select></td><td>' + esc(x.reason || '') + '</td></tr>';
+          return '<option value="' + o + '"' + (o === v ? ' selected' : '') + '>' + o + '</option>';
+        }).join('') + '</select></td>'
+        + '<td><div>' + esc(x.name) + '</div><div class="f04-desc">' + esc(x.description || '') + '</div></td>'
+        + '<td>' + (x.productShare == null ? '—' : esc(x.productShare) + '%') + ' / '
+        + (x.salesShare == null ? '—' : esc(x.salesShare) + '%') + '</td>'
+        + '<td><span class="f04-draft">' + esc(v) + '</span>'
+        + '<div class="f04-desc">' + esc(x.reason || '') + '</div></td></tr>';
     }).join('');
-    return '<div class="draft-box"><table class="mini"><thead><tr><th>#</th><th>品类特征</th><th>草案判定</th><th>理由</th></tr></thead>'
-      + '<tbody>' + rows + '</tbody></table></div>'
-      + '<div class="step-meta">' + esc(d.rule || '') + '（P2 开放逐条修改与提交）</div>';
+    return '<div class="step-meta">' + esc(d.sourceNote || '') + '</div>'
+      + '<div class="step-meta">' + esc(d.note || '') + ' · 竞对档案 ' + esc(d.profiles) + ' 行</div>'
+      + '<div class="f04-wrap"><table class="mini f04"><thead><tr>'
+      + '<th>#</th><th>你的判定</th><th>品类特征 / 说明</th><th>占比 产品 / 销量</th><th>草案判定 / 理由</th>'
+      + '</tr></thead><tbody>' + rows + '</tbody></table></div>'
+      + '<div class="f04-count" data-role="f04-count"></div>'
+      + '<div class="btn-row"><button class="btn btn-sm" type="button" data-role="f04-reset">全部恢复为草案判定</button></div>'
+      + '<div class="step-meta">' + esc(d.rule || '') + '</div>';
+  }
+
+  function f04Count(card) {
+    var n = { '保留': 0, '剔除': 0, '缺口': 0 };
+    Array.prototype.forEach.call(card.querySelectorAll('[data-f04-verdict]'), function (s) {
+      if (n[s.value] != null) n[s.value]++;
+    });
+    var box = card.querySelector('[data-role="f04-count"]');
+    if (box) box.textContent = '共 ' + (n['保留'] + n['剔除'] + n['缺口']) + ' 条：保留 '
+      + n['保留'] + ' / 剔除 ' + n['剔除'] + ' / 缺口 ' + n['缺口']
+      + '。剔除的不参与对比，保留＋缺口会逐方对照各家 listing 原话。';
   }
 
   function batchForm05(step) {
@@ -219,14 +259,17 @@
     if (step.status !== '失败') return '';
     var code = step.error_code || 'UNKNOWN';
     var isQuota = /QUOTA|PHASE1_INCOMPLETE/.test(code);
-    return '<div class="quota-box">' + (isQuota ? '额度不足 / 阶段一未完成' : '这一步失败（' + esc(code) + '）')
-      + '：' + esc(step.error_reason || '') + '</div>';
+    var head = isQuota ? '额度不足 / 阶段一未完成'
+      : (code === 'DECISION_INVALID' ? '确认内容不合格' : '这一步失败（' + esc(code) + '）');
+    return '<div class="quota-box">' + head + '：' + esc(step.error_reason || '') + '</div>';
   }
 
   function renderStep(step) {
     var k = step.module + '/' + step.step;
     var meta = STEP_META[k] || { seq: 0, name: step.step };
-    var canWrite = ['待确认', '已完成'].indexOf(step.status) >= 0 && (k === '06/rules');
+    var d = step.draft || {};
+    var ready04 = k === '04/confirm' && d.ready === true && !!(d.items || []).length;
+    var canWrite = ['待确认', '已完成'].indexOf(step.status) >= 0 && (k === '06/rules' || ready04);
     var body = '';
     if (k === '06/rules') body = rulesForm(step);
     else if (k === '04/confirm') body = confirmForm04(step);
@@ -238,15 +281,22 @@
     }
     var btn = '';
     if (step.status === '失败') {
-      btn = '<button class="btn btn-sm" type="button" data-retry="' + esc(step.id) + '">单项重试本步骤</button>';
+      // 04 失败后允许按「当前表里重新选好的判定」再提交一次，不用沿用上次那份不合规格的 decision
+      btn = (k === '04/confirm' && ready04)
+        ? '<button class="btn btn-primary btn-sm" type="button" data-approve="' + esc(step.id) + '">按当前判定重新确认并重试 04</button>'
+        : '<button class="btn btn-sm" type="button" data-retry="' + esc(step.id) + '">单项重试本步骤</button>';
     } else if (canWrite) {
+      var label = k === '04/confirm'
+        ? (step.status === '已完成' ? '改判定并重跑 04（再花 DeepSeek 1 次）' : '确认清单并点亮 04（DeepSeek 1 次）')
+        : (step.status === '已完成' ? '保存规矩并重跑（零付费）' : '确认并出 06 动作清单（零付费）');
       btn = '<button class="btn btn-primary btn-sm" type="button" data-approve="' + esc(step.id) + '">'
-        + (step.status === '已完成' ? '保存规矩并重跑（零付费）' : '确认并出 06 动作清单（零付费）') + '</button>';
+        + label + '</button>';
     } else if (step.status === '未开放') {
-      var phase = (step.module === '04' ? 'P2' : (step.module === '05' ? 'P3' : 'P4'));
-      btn = '<button class="btn btn-sm" type="button" disabled>' + phase + ' 开放提交</button>';
+      var phase = (step.module === '05' ? 'P3' : (step.module === '06' ? 'P4' : 'P2'));
+      var text = (k === '04/confirm') ? '先完成步骤 1（竞对资料与草案）' : phase + ' 开放提交';
+      btn = '<button class="btn btn-sm" type="button" disabled>' + text + '</button>';
     }
-    return '<div class="step-card" data-step="' + esc(k) + '">'
+    return '<div class="step-card" data-step="' + esc(k) + '" data-f04-total="' + esc((d.items || []).length) + '">'
       + '<div class="step-head">'
       + (meta.seq ? '<span class="step-seq">步骤 ' + meta.seq + '</span>' : '')
       + '<span class="step-name">' + esc(meta.name) + '</span>' + tag(step.status) + '</div>'
@@ -313,15 +363,39 @@
       b.onclick = function () { submit('retry_module_step', { p_step_id: b.getAttribute('data-retry') }, b); };
     });
     Array.prototype.forEach.call(stepsBox.querySelectorAll('[data-approve]'), function (b) {
-      b.onclick = function () { approve06(b); };
+      b.onclick = function () {
+        var k = b.closest('.step-card').getAttribute('data-step');
+        if (k === '04/confirm') approve04(b); else approve06(b);
+      };
     });
     Array.prototype.forEach.call(stepsBox.querySelectorAll('[data-rule-num],[data-rule-text]'), function (el) {
-      el.onchange = function () { syncRules(el); };
+      el.onchange = function () { syncRules(el); markDirty(); };
     });
     Array.prototype.forEach.call(stepsBox.querySelectorAll('[data-role="rules-json"]'), function (el) {
-      el.onfocus = function () { editing = true; };
-      el.onblur = function () { editing = false; };
+      el.onfocus = function () { markDirty(); };
+      el.oninput = function () { markDirty(); };
     });
+    // 04 逐条确认：初始化计数、改动后暂停自动刷新（防 30 秒轮询把未提交的选择冲掉）
+    Array.prototype.forEach.call(stepsBox.querySelectorAll('.step-card[data-step="04/confirm"]'), function (card) {
+      f04Count(card);
+      Array.prototype.forEach.call(card.querySelectorAll('[data-f04-verdict]'), function (s) {
+        s.onchange = function () { f04Count(card); markDirty(); };
+      });
+      var reset = card.querySelector('[data-role="f04-reset"]');
+      if (reset) reset.onclick = function () {
+        Array.prototype.forEach.call(card.querySelectorAll('[data-f04-verdict]'), function (s) {
+          s.value = s.getAttribute('data-f04-draft') || s.value;
+        });
+        f04Count(card);
+        markDirty();
+      };
+    });
+  }
+
+  // 表单一旦被改过就暂停自动刷新，直到提交成功或点「手动刷新」恢复。
+  function markDirty() {
+    editing = true;
+    document.getElementById('last-refresh').textContent = '已修改，自动刷新暂停（提交或点手动刷新恢复）';
   }
 
   function currentRulesJson(card) {
@@ -339,6 +413,30 @@
     else if (key === 'trendMode') r.trendPolicy.mode = el.value;
     else r.answers[key] = el.value;
     ta.value = JSON.stringify(r, null, 2);
+  }
+
+  // 04 阶段二：把逐条选择汇总成 keep/drop/gap 三个名字数组，判定仍由后台按阶段一清单复核。
+  function approve04(btn) {
+    var card = btn.closest('.step-card');
+    var sels = card.querySelectorAll('[data-f04-verdict]');
+    var buckets = { keep: [], drop: [], gap: [] };
+    var map = { '保留': 'keep', '剔除': 'drop', '缺口': 'gap' };
+    Array.prototype.forEach.call(sels, function (s) {
+      var b = map[s.value];
+      if (b) buckets[b].push(s.getAttribute('data-f04-name'));
+    });
+    var total = buckets.keep.length + buckets.drop.length + buckets.gap.length;
+    var expected = Number(card.getAttribute('data-f04-total') || 0);
+    if (!total || (expected && total !== expected)) {
+      window.showMsg('msg', '判定条数不对（应为 ' + expected + ' 条），请刷新页面后重新确认', 'err'); return;
+    }
+    submit('approve_module_step', {
+      p_step_id: btn.getAttribute('data-approve'),
+      p_decision: {
+        keep: buckets.keep, drop: buckets.drop, gap: buckets.gap,
+        confirmedFrom: '网页', confirmedAt: new Date().toISOString()
+      }
+    }, btn);
   }
 
   function approve06(btn) {
@@ -361,7 +459,13 @@
     try {
       var r = await window.sb.rpc(fn, args);
       if (r.error) throw r.error;
-      window.showMsg('msg', fn === 'retry_module_step' ? '已登记单项重试，工人会在 30 秒内领取（额度不足会再次提示）' : '确认已提交，工人会在 30 秒内执行', 'ok');
+      var okMsg = fn === 'retry_module_step'
+        ? '已登记单项重试，工人会在 30 秒内领取（额度不足会再次提示）'
+        : (args.p_decision && args.p_decision.keep
+          ? '确认已提交：工人会按你逐条确认的判定跑 04（DeepSeek 1 次），完成后报告自动点亮 04'
+          : '确认已提交，工人会在 30 秒内执行');
+      window.showMsg('msg', okMsg, 'ok');
+      editing = false;
       await load();
     } catch (ex) {
       window.showMsg('msg', '提交失败：' + window.humanError(ex), 'err');
@@ -393,7 +497,7 @@
     document.getElementById('last-refresh').textContent = '最后刷新 ' + new Date().toLocaleTimeString('zh-CN');
   }
 
-  document.getElementById('btn-refresh').onclick = load;
+  document.getElementById('btn-refresh').onclick = function () { editing = false; load(); };
   (async function () {
     session = await window.requireSession();
     if (!session) return;
