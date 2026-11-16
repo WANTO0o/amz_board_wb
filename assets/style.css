@@ -72,7 +72,9 @@ input[type=file] { padding: 7px; }
 /* 工具页 · 竞对 ASIN 可加行列表（模块 04 表单升级） */
 .comp-block { margin-bottom: 6px; }
 .comp-head { font-size: 12.5px; color: var(--muted); margin-bottom: 8px; }
-.comp-row { display: flex; align-items: center; gap: 8px; margin-bottom: 8px; }
+.comp-row { display: flex; align-items: center; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+/* P6：每家竞对的差评原文独占一行，随 ASIN 一起提交，只在 05 步骤只读展示 */
+.comp-row textarea.comp-reviews { flex: 0 0 100%; width: 100%; box-sizing: border-box; min-height: 62px; margin-top: 2px; padding: 7px 9px; font-size: 12px; line-height: 1.5; resize: vertical; }
 .comp-row input.comp-asin { flex: 1; margin-top: 0; font-family: ui-monospace, Menlo, Consolas, monospace; letter-spacing: .5px; }
 .comp-role { flex: 0 0 auto; font-size: 11px; font-weight: 600; color: #1d4ed8; background: #e8efff; border-radius: 9px; padding: 3px 9px; white-space: nowrap; }
 .comp-del { flex: 0 0 auto; width: 28px; height: 28px; border: 1px solid var(--line); border-radius: 6px; background: #fff; color: var(--muted); font-size: 15px; line-height: 1; cursor: pointer; }

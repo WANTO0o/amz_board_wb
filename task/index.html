@@ -78,17 +78,26 @@
   .f04-desc { font-size:11px; color:#6b7280; line-height:1.45; margin-top:3px; max-width:340px; overflow-wrap:anywhere; }
   .f04-draft { font-size:11.5px; padding:1px 7px; border-radius:999px; background:#e8efff; color:#1d4ed8; white-space:nowrap; }
   .f04-count { font-size:12px; color:#475569; margin:8px 0 0; line-height:1.6; }
-  /* 05 一次确认：清单只读、竞对逐家可改跑/跳过 */
+  /* 05 一次确认：P6 清单可编辑、差评原文只读、竞对逐家可改跑/跳过 */
   .f05-wrap { background:#f8f9fb; border:1px solid #e6eaf1; border-radius:8px; padding:6px 10px 10px; max-height:300px; overflow:auto; }
   table.f05 { width:100%; border-collapse:collapse; font-size:12.5px; min-width:540px; }
   table.f05 th, table.f05 td { border-bottom:1px solid rgba(0,0,0,.07); padding:7px 8px; text-align:left; vertical-align:top; }
   table.f05 th { position:sticky; top:0; background:#f8f9fb; color:#475569; font-weight:600; white-space:nowrap; }
   table.f05 input[type="text"] { width:100%; min-width:120px; box-sizing:border-box; }
+  table.f05 textarea { width:100%; min-width:150px; box-sizing:border-box; font-size:12px; line-height:1.45; resize:vertical; }
+  table.f05-edit { min-width:760px; }
+  .f05-cl-wrap { max-height:430px; }
+  .f05-num { display:inline-block; min-width:18px; margin-right:5px; color:#94a3b8; font-size:11px; }
   .f05-source { font-size:11px; color:#6b7280; line-height:1.45; max-width:340px; overflow-wrap:anywhere; }
   .f05-count { font-size:12px; color:#475569; margin:8px 0 0; line-height:1.6; }
   .f05-tag { font-size:11px; padding:1px 7px; border-radius:999px; white-space:nowrap; }
   .f05-done { background:#e8f5ee; color:#0f7a4d; }
   .f05-todo { background:#fdf3e2; color:#a35b06; }
+  .f05-reviews { background:#fff; border:1px solid #e6eaf1; border-radius:8px; padding:8px 10px; margin:8px 0; max-height:240px; overflow:auto; }
+  .f05-reviews-one + .f05-reviews-one { border-top:1px dashed #e6eaf1; margin-top:8px; padding-top:8px; }
+  .f05-reviews-asin { font-size:11px; font-weight:600; color:#1d4ed8; margin-bottom:4px; }
+  .f05-reviews-text { font-size:12px; color:#334155; line-height:1.6; white-space:pre-wrap; overflow-wrap:anywhere; word-break:break-word; }
+  .f05-warn { background:#fff7e6; border:1px solid #f2d59b; color:#8a5a00; border-radius:8px; padding:8px 10px; font-size:12px; line-height:1.6; margin:8px 0; overflow-wrap:anywhere; }
   /* 06 润色：动作清单只读，理由可能很长必须能断行，确认勾选放在最后 */
   .f06-wrap { background:#f8f9fb; border:1px solid #e6eaf1; border-radius:8px; padding:6px 10px 10px; max-height:340px; overflow:auto; }
   table.f06 { width:100%; border-collapse:collapse; font-size:12.5px; min-width:600px; }
@@ -285,20 +294,93 @@
       + '。剔除的不参与对比，保留＋缺口会逐方对照各家 listing 原话。';
   }
 
-  // 05 一次确认：清单只读、每家竞对可改跑/跳过；失败重提时优先带出上次提交的 decision。
+  // 05 一次确认（P6）：差评原文只读展示，确认清单可逐条改写／增删；竞对仍逐家可改跑/跳过。
+  function clRowHtml(x, i) {
+    return '<tr data-f05-row="' + i + '">'
+      + '<td><span class="f05-num">' + (i + 1) + '</span>'
+      + '<input type="text" data-f05-name="' + i + '" maxlength="80" placeholder="确认要素名" value="' + esc(x.name || '') + '"></td>'
+      + '<td><input type="text" data-f05-en="' + i + '" maxlength="120" placeholder="英文说法" value="' + esc(x.en || '') + '"></td>'
+      + '<td><textarea rows="2" maxlength="500" data-f05-source="' + i + '" placeholder="来源（写实：写清是哪条差评／哪张主图共性）">' + esc(x.source || '') + '</textarea></td>'
+      + '<td><textarea rows="2" maxlength="500" data-f05-why="' + i + '" placeholder="买家为什么必须确认它才敢下单">' + esc(x.why || '') + '</textarea></td>'
+      + '<td><button class="btn btn-sm btn-ghost" type="button" data-f05-del="' + i + '">删</button></td></tr>';
+  }
+
+  function collectClItems(card) {
+    var out = [];
+    Array.prototype.forEach.call(card.querySelectorAll('[data-f05-row]'), function (row) {
+      var i = row.getAttribute('data-f05-row');
+      var g = function (k) {
+        var el = card.querySelector('[data-f05-' + k + '="' + i + '"]');
+        return el ? String(el.value || '').trim() : '';
+      };
+      out.push({ name: g('name'), en: g('en'), source: g('source'), why: g('why') });
+    });
+    return out;
+  }
+
+  function clNorm(items) {
+    return (items || []).map(function (x) {
+      return { name: String(x.name || '').trim(), en: String(x.en || '').trim(),
+        source: String(x.source || '').trim(), why: String(x.why || '').trim() };
+    });
+  }
+
+  function clChanged(card) {
+    var base = (((stepMap[card.getAttribute('data-step-id')] || {}).draft || {}).checklist) || [];
+    return JSON.stringify(clNorm(base)) !== JSON.stringify(clNorm(collectClItems(card)));
+  }
+
+  function renderClRows(card, items) {
+    var body = card.querySelector('[data-role="f05-cl-body"]');
+    if (!body) return;
+    body.innerHTML = items.length
+      ? items.map(clRowHtml).join('')
+      : '<tr><td colspan="5">清单为空，点「＋ 添加一条」补一条</td></tr>';
+    bindClEvents(card);
+    f05Count(card);
+  }
+
+  function bindClEvents(card) {
+    Array.prototype.forEach.call(card.querySelectorAll(
+      '[data-f05-name],[data-f05-en],[data-f05-source],[data-f05-why]'), function (el) {
+      el.oninput = function () { markDirty(); f05Count(card); };
+    });
+    Array.prototype.forEach.call(card.querySelectorAll('[data-f05-del]'), function (b) {
+      b.onclick = function () {
+        var items = collectClItems(card);
+        items.splice(Number(b.getAttribute('data-f05-del')), 1);
+        renderClRows(card, items);
+        markDirty();
+      };
+    });
+    var add = card.querySelector('[data-f05-add]');
+    if (add) add.onclick = function () {
+      var items = collectClItems(card);
+      items.push({ name: '', en: '', source: '', why: '' });
+      renderClRows(card, items);
+      markDirty();
+    };
+    var reset = card.querySelector('[data-f05-reset]');
+    if (reset) reset.onclick = function () {
+      var base = (((stepMap[card.getAttribute('data-step-id')] || {}).draft || {}).checklist) || [];
+      renderClRows(card, clNorm(base));
+      markDirty();
+    };
+  }
+
   function batchForm05(step) {
     var d = step.draft || {};
-    var cl = d.checklist || [];
-    var names = d.checklistNames || cl.map(function (x) { return String(x.name || ''); });
+    var cl = clNorm(d.checklist || []);
+    var names = d.checklistNames || cl.map(function (x) { return x.name; });
     var prev = step.decision || {};
     var prevMap = {};
     if (Array.isArray(prev.competitors)) {
       prev.competitors.forEach(function (c) { if (c && c.asin) prevMap[String(c.asin)] = c; });
     }
-    var rows = cl.map(function (x, i) {
-      return '<tr><td>' + (i + 1) + '</td><td><div>' + esc(x.name || '') + '</div>'
-        + '<div class="f05-source">' + esc(x.source || x.why || '') + '</div></td></tr>';
-    }).join('');
+    // 失败重提时优先带出上次提交的清单（对象数组），否则用后台带出的默认清单。
+    var clItems = Array.isArray(prev.checklist) && prev.checklist.length &&
+      typeof prev.checklist[0] === 'object' ? clNorm(prev.checklist) : cl;
+    var rows = clItems.map(clRowHtml).join('');
     var comps = (d.competitors || []).map(function (c, i) {
       var p = prevMap[String(c.asin)] || {};
       var run = (typeof p.run === 'boolean') ? p.run : (c.run !== false);
@@ -317,18 +399,40 @@
     var blocked = !d.ready
       ? '<div class="quota-box">还不能确认 05：'
         + esc(!d.m04Ready ? '04 竞对对比还没点亮，05 的图片 URL 全部来自 04 正式留底，请先完成 04 步骤 2「逐条确认特征清单」。'
-          : (!names.length ? '没有确认清单留底，请联系维护者补 7 条定稿清单。'
+          : (!names.length ? '没有带出确认清单，可在下面点「＋ 添加一条」自己补。'
             : '自己的主副图 URL 不可用，请回 04 检查商品档案。'))
         + '</div>'
+      : '';
+    var notes = d.reviewNotes || [];
+    var notesHtml = '<div class="step-meta"><b>本任务的竞对差评原文（只读参考）</b></div>'
+      + (notes.length
+        ? '<div class="f05-reviews">' + notes.map(function (n) {
+            return '<div class="f05-reviews-one"><div class="f05-reviews-asin">'
+              + esc(n.asin || '未指定 ASIN') + '</div><div class="f05-reviews-text">'
+              + esc(n.reviews || '') + '</div></div>';
+          }).join('') + '</div>'
+        : '<div class="step-meta">本任务没有登记差评原文。换了 ASIN／竞对时，请回「提交任务」页按竞对补填，再对照它改写下面的清单；不填也能直接改清单。</div>');
+    var warn = d.checklistInherited
+      ? '<div class="f05-warn">清单来源：<b>' + esc(d.checklistSource || '上次定稿')
+        + '</b>（继承来的，不是本任务定稿）'
+        + (notes.length ? '；本任务已填 ' + notes.length + ' 家差评原文，请逐条改写后再确认，避免新 ASIN 沿用旧差评。'
+          : '；若换了品类，请按新竞对的差评改写后再确认。') + '</div>'
       : '';
     return blocked
       + '<div class="step-meta">' + esc(d.note || '') + '</div>'
       + '<div class="step-meta">' + esc(d.sourceNote || '') + '</div>'
+      + notesHtml + warn
       + '<div class="f05-wrap"><table class="mini f05"><thead><tr>'
       + '<th>竞对</th><th>是否跑</th><th>跳过原因</th><th>图片</th><th>进度</th></tr></thead><tbody>'
       + (comps || '<tr><td colspan="5">04 留底里没有竞对</td></tr>') + '</tbody></table></div>'
-      + '<div class="f05-wrap" style="margin-top:8px"><table class="mini f05"><thead><tr><th>#</th><th>确认清单（定稿，顺序不可改）</th></tr></thead><tbody>'
-      + (rows || '<tr><td colspan="2">暂无清单留底</td></tr>') + '</tbody></table></div>'
+      + '<div class="f05-wrap f05-cl-wrap" style="margin-top:8px"><table class="mini f05 f05-edit"><thead><tr>'
+      + '<th>确认清单（定稿，可编辑；改了要素名会重跑自家图）</th><th>英文说法</th>'
+      + '<th>来源（写实）</th><th>买家为什么必须确认它才敢下单</th><th>操作</th>'
+      + '</tr></thead><tbody data-role="f05-cl-body">'
+      + (rows || '<tr><td colspan="5">暂无清单留底</td></tr>') + '</tbody></table></div>'
+      + '<div class="btn-row" style="margin-top:8px">'
+      + '<button class="btn btn-sm" type="button" data-f05-add>＋ 添加一条</button>'
+      + '<button class="btn btn-sm btn-ghost" type="button" data-f05-reset>恢复带出的清单</button></div>'
       + '<div class="f05-count" data-role="f05-count"></div>'
       + '<div class="form-grid" style="margin-top:8px">'
       + '<label>全部跑完自动发布并点亮 05<input type="checkbox" data-f05-auto style="width:auto;margin-top:6px"'
@@ -346,9 +450,13 @@
     });
     var needSelf = card.getAttribute('data-f05-self-done') !== '1';
     var box = card.querySelector('[data-role="f05-count"]');
-    if (box) box.textContent = '竞对：跑 ' + run + ' 家 / 跳过 ' + skip + ' 家；已完成 ' + done
+    if (!box) return;
+    box.textContent = '竞对：跑 ' + run + ' 家 / 跳过 ' + skip + ' 家；已完成 ' + done
       + ' 家留底复用不重复扣费。本次预计新增视觉请求：' + (needSelf ? '自家 1 次 ＋ ' : '自家 0 次（复用）＋ ')
       + missing + ' 家同框，图次随各家实际图片数计。';
+    if (clChanged(card)) {
+      box.textContent += ' ⚠ 清单已改动：要素名变了会让自家整组图重跑、各家同框留底失效（每家最多整批重跑 2 次）；只改来源／理由不会重跑视觉，只更新报告文字。';
+    }
   }
 
   // 06 润色：动作清单只读（结论由纯函数按 rules.json 硬算），用户只确认「要不要花 1 次模型润理由」。
@@ -449,7 +557,8 @@
           : (k === '06/polish' ? '先在步骤 1 出 06 动作清单' : phase + ' 开放提交'));
       btn = '<button class="btn btn-sm" type="button" disabled>' + text + '</button>';
     }
-    return '<div class="step-card" data-step="' + esc(k) + '" data-f04-total="' + esc((d.items || []).length)
+    return '<div class="step-card" data-step="' + esc(k) + '" data-step-id="' + esc(step.id) + '"'
+      + ' data-f04-total="' + esc((d.items || []).length)
       + '" data-f05-self-done="' + ((d.progress && d.progress.selfDone) ? '1' : '0') + '">'
       + '<div class="step-head">'
       + (meta.seq ? '<span class="step-seq">步骤 ' + meta.seq + '</span>' : '')
@@ -551,8 +660,9 @@
         markDirty();
       };
     });
-    // 05 一次确认：初始化补跑预估、勾掉「跑这家」才启用跳过原因、改动后暂停自动刷新
+    // 05 一次确认：初始化补跑预估、清单编辑事件、勾掉「跑这家」才启用跳过原因、改动后暂停自动刷新
     Array.prototype.forEach.call(stepsBox.querySelectorAll('.step-card[data-step="05/batch"]'), function (card) {
+      bindClEvents(card);
       f05Count(card);
       Array.prototype.forEach.call(card.querySelectorAll('[data-f05-run]'), function (cb) {
         cb.onchange = function () {
@@ -623,15 +733,26 @@
     }, btn);
   }
 
-  // 05 一次确认：只发清单名 ＋ 逐家跑/跳过 ＋ 是否自动发布；后台按 04 留底重新查名查重。
+  // 05 一次确认（P6）：发用户改写后的四样清单 ＋ 逐家跑/跳过 ＋ 是否自动发布；后台重新校验并写回本任务 checklist.json。
   function approve05(btn) {
     var id = btn.getAttribute('data-approve');
-    var step = stepMap[id] || {};
-    var names = (step.draft || {}).checklistNames || [];
     var card = btn.closest('.step-card');
-    if (!names.length) {
-      window.showMsg('msg', '没有确认清单，请刷新页面后再试；若仍为空说明 05 前置未就绪', 'err'); return;
+    var items = collectClItems(card);
+    if (!items.length) {
+      window.showMsg('msg', '确认清单一条都没有，点「＋ 添加一条」补上再提交', 'err'); return;
     }
+    var err = '', seen = {};
+    if (items.length > 20) err = '清单最多 20 条';
+    for (var i = 0; i < items.length && !err; i++) {
+      var it = items[i];
+      if (!it.name) err = '第 ' + (i + 1) + ' 条还没写要素名';
+      else if (seen[it.name]) err = '要素名重复：' + it.name;
+      else if (it.name.length > 80 || it.en.length > 120 || it.source.length > 500 || it.why.length > 500) {
+        err = '第 ' + (i + 1) + ' 条有字段超长（名字 80／英文 120／来源 500／理由 500 字）';
+      } else if (/<script|javascript:/i.test(JSON.stringify(it))) err = '第 ' + (i + 1) + ' 条含脚本内容';
+      if (it.name) seen[it.name] = 1;
+    }
+    if (err) { window.showMsg('msg', err, 'err'); return; }
     var comps = [];
     Array.prototype.forEach.call(card.querySelectorAll('[data-f05-run]'), function (cb) {
       var i = cb.getAttribute('data-f05-run');
@@ -643,12 +764,18 @@
     if (bad.length) {
       window.showMsg('msg', '选了跳过就要写原因：' + bad.map(function (c) { return c.asin; }).join('、'), 'err'); return;
     }
+    var changed = clChanged(card);
+    if (changed && !window.confirm(
+      '你已经改了确认清单。\n\n要素名变化会让自家整组图重新看一遍，已有竞对同框留底也会失效、需逐家重新看图（每家校验不过最多整批重跑 2 次）。按预估：自家 6 图 1 次视觉请求，每家竞对 12 图各 1 次。只改「来源／理由」而不改要素名，不会重跑视觉，只更新报告文字。\n\n确定按这份新清单提交吗？')) {
+      return;
+    }
     var auto = card.querySelector('[data-f05-auto]');
     submit('approve_module_step', {
       p_step_id: id,
       p_decision: {
-        checklist: names, competitors: comps,
+        checklist: items, competitors: comps,
         autoPublish: auto ? auto.checked : true, reconcileMode: '原始留底',
+        checklistEdited: changed,
         confirmedFrom: '网页', confirmedAt: new Date().toISOString()
       }
     }, btn);

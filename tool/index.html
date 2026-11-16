@@ -12,14 +12,14 @@
 <main class="wrap">
   <section class="card">
     <h2>新建关键词作战任务</h2>
-    <p class="desc">输入要分析的 ASIN，上传亚马逊「商品推广_搜索词」报表，工人会在后台把关键词数据补齐并生成作战总表。01–03 自动出；04–06 需要你到「模块进度」页逐项确认，全部在网页上完成，不用切后台。</p>
+    <p class="desc">输入要分析的 ASIN，上传亚马逊「商品推广_搜索词」报表，工人会在后台把关键词数据补齐并生成作战总表。01–03 自动出；04–06 需要你到「模块进度」页逐项确认，全部在网页上完成，不用切后台。换竞对后，可在每家竞对下面贴它的差评原文，05 步骤会带出来供你改写确认清单（只作参考，不自动判定、不抓评论接口）。</p>
     <div class="row">
       <div class="col">
         <label>自己 ASIN（10 位，B0 开头）
           <input id="asin" type="text" maxlength="10" placeholder="B09V366BDY" autocomplete="off">
         </label>
         <div class="comp-block">
-          <div class="comp-head">竞对 ASIN（选填，最多 5 家；从报告里的候选名单挑）</div>
+          <div class="comp-head">竞对 ASIN（选填，最多 5 家；从报告里的候选名单挑。每家下面可贴差评原文，带到 05 步骤给你改写清单用）</div>
           <div id="comp-rows"></div>
           <button id="btn-add-comp" class="btn btn-sm btn-ghost" type="button">＋ 添加竞对 ASIN</button>
         </div>
@@ -33,7 +33,7 @@
         </label>
       </div>
     </div>
-    <div class="field-note">提交顺序：先传报表到收件箱，传成功才登记任务。01–03 自动出；04–06 的确认、额度不足提醒与单项重试都在「模块进度」页完成。</div>
+    <div class="field-note">提交顺序：先传报表到收件箱，传成功才登记任务。01–03 自动出；04–06 的确认、额度不足提醒与单项重试都在「模块进度」页完成。竞对差评原文随任务一起存，只在 05 步骤给你看，不会自动写进清单，也不会自动抓评论。</div>
     <p id="msg" class="msg" hidden></p>
     <div style="margin-top:14px">
       <button id="btn-submit" class="btn btn-primary" type="button">提交任务</button>
@@ -90,18 +90,23 @@
     div.className = 'comp-row';
     div.innerHTML = '<input class="comp-asin" type="text" maxlength="10" placeholder="竞对 ASIN" autocomplete="off">'
       + '<span class="comp-role">竞对</span>'
-      + '<button class="comp-del" type="button" title="删掉这行">×</button>';
+      + '<button class="comp-del" type="button" title="删掉这行">×</button>'
+      + '<textarea class="comp-reviews" rows="3" maxlength="4000" placeholder="这家竞对的差评原文（选填）：粘贴 1–3 星评论原话，05 步骤会原样带出供你改写确认清单；不会自动判定、不会调评论接口"></textarea>';
     div.querySelector('.comp-del').onclick = function () { div.remove(); };
     compRows.appendChild(div);
     div.querySelector('.comp-asin').focus();
   }
   addCompBtn.onclick = addCompRow;
 
+  // P6：一行 = 一个竞对 ASIN + 它的差评原文；两样都空的行不登记。
   function collectCompetitors() {
     var list = [];
-    Array.prototype.forEach.call(compRows.querySelectorAll('.comp-asin'), function (inp) {
-      var v = inp.value.trim().toUpperCase();
-      if (v) list.push(v);
+    Array.prototype.forEach.call(compRows.querySelectorAll('.comp-row'), function (row) {
+      var inp = row.querySelector('.comp-asin');
+      var ta = row.querySelector('.comp-reviews');
+      var a = inp ? inp.value.trim().toUpperCase() : '';
+      var reviews = ta ? String(ta.value || '').trim() : '';
+      if (a || reviews) list.push({ asin: a, reviews: reviews });
     });
     return list;
   }
@@ -142,17 +147,22 @@
     if (!session) { window.showMsg('msg', '登录状态失效了，请重新登录', 'err'); return; }
     var asin = asinInput.value.trim().toUpperCase();
     if (!/^B0[A-Z0-9]{8}$/.test(asin)) { window.showMsg('msg', 'ASIN 得是 10 位、B0 开头，例如 B09V366BDY', 'err'); return; }
-    var compAsins = collectCompetitors();
-    if (compAsins.length) {
-      if (compAsins.length > MAX_COMP) { window.showMsg('msg', '竞对最多 ' + MAX_COMP + ' 家', 'err'); return; }
+    var compData = collectCompetitors();
+    var compAsins = compData.map(function (x) { return x.asin; });
+    if (compData.length) {
+      if (compData.length > MAX_COMP) { window.showMsg('msg', '竞对最多 ' + MAX_COMP + ' 家', 'err'); return; }
       for (var ci = 0; ci < compAsins.length; ci++) {
         if (!/^B0[A-Z0-9]{8}$/.test(compAsins[ci])) {
-          window.showMsg('msg', '竞对 ASIN 也要是 10 位、B0 开头：' + compAsins[ci], 'err'); return;
+          window.showMsg('msg', '竞对 ASIN 也要是 10 位、B0 开头：'
+            + (compAsins[ci] || '（这一行填了差评但没写 ASIN）'), 'err'); return;
         }
       }
       if (new Set(compAsins).size !== compAsins.length) { window.showMsg('msg', '竞对列表里有重复的 ASIN', 'err'); return; }
       if (compAsins.indexOf(asin) >= 0) { window.showMsg('msg', '竞对列表里混进了自己 ASIN，去掉它', 'err'); return; }
     }
+    // P6：差评原文按 ASIN 分栏写进 tasks.competitor_reviews，05 步骤只读参考、不自动判定。
+    var compReviews = compData.filter(function (x) { return x.reviews; })
+      .map(function (x) { return { asin: x.asin, reviews: x.reviews.slice(0, 4000) }; });
     var coreKw = coreKwInput.value.trim();
     if (coreKw.length > 80) { window.showMsg('msg', '核心关键词太长了（上限 80 字）', 'err'); return; }
     var file = fileInput.files && fileInput.files[0];
@@ -178,6 +188,7 @@
         asin: asin,
         report_path: storagePath,
         competitor_asins: compAsins.length ? compAsins.join(',') : null,
+        competitor_reviews: compReviews,
         core_keyword: coreKw || null,
         status: '待处理'
       });
