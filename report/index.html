@@ -3,31 +3,20 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>查看报告 · 关键词作战台</title>
+<title>Listing 增长诊断报告 · 关键词作战台</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="../assets/style.css">
 <style>
-  @media (max-width:620px) {
-    .card-head { flex-wrap:wrap; }
-  }
+  /* 报告是重表格页面：容器不限宽，只留左右内边距，尽量吃满屏幕宽度 */
+  .wrap { max-width: none; padding-left: 20px; padding-right: 20px; }
 </style>
 </head>
 <body>
 <header class="app-header" id="app-header"></header>
 <main class="wrap">
+  <p id="msg" class="msg" hidden></p>
   <section class="card">
-    <div class="card-head">
-      <h2>关键词作战总表</h2>
-      <span class="spacer"></span>
-      <a class="btn btn-sm" id="goto-steps" href="#">模块进度 →</a>
-      <a class="btn btn-sm" id="back" href="#">返回工具页</a>
-    </div>
-    <p class="desc" id="meta">正在读取任务…</p>
-    <p id="msg" class="msg" hidden></p>
-  </section>
-
-  <section class="card">
-    <iframe id="frame" class="report-frame hidden" title="关键词作战总表"
+    <iframe id="frame" class="report-frame hidden" title="Listing 增长诊断报告"
       sandbox="allow-same-origin allow-top-navigation-by-user-activation"></iframe>
   </section>
   <p class="foot">报告由后台工人生成，本页在线渲染，不会跳转到文件柜地址</p>
@@ -40,7 +29,6 @@
   'use strict';
   var C = window.APP_CONFIG;
   var frame = document.getElementById('frame');
-  var meta = document.getElementById('meta');
   var taskId = new URLSearchParams(location.search).get('task');
   var lastRev = null;
   var MODULES = [
@@ -51,8 +39,6 @@
   var stepState = null;    // module_steps 汇总，读不到时为 null（只按报告点亮状态降级展示）
   var reportReady = {};    // 报告分节是否点亮，从 iframe 里的 .mi-tag.on 读，不信任数据库
 
-  document.getElementById('back').href = window.APP_BASE + 'tool/';
-
   function esc(s) { return window.esc(s); }
   function stepsUrl(mod) {
     var u = new URL(window.APP_BASE + 'task/', location.href);
@@ -60,7 +46,8 @@
     if (mod) u.searchParams.set('module', mod);
     return u.href;
   }
-  document.getElementById('goto-steps').href = stepsUrl();
+  // 「模块进度 / 返回工具页」已挪进报告标题栏（由 decorate 注入），这里只提供地址。
+  var backUrl = window.APP_BASE + 'tool/';
 
   // 注入到报告 iframe 的样式：菜单徽标 + 选中未完成模块时详情里的跳转条。
   // 报告 HTML 是 sandbox 里的静态内容，不执行脚本，切换模块靠 CSS，所以提示条插进 pane 即可只在选中时显示。
@@ -74,7 +61,18 @@
     '.rp-goto a{flex:0 0 auto;display:inline-flex;align-items:center;padding:5px 12px;border-radius:7px;background:#2563eb;color:#fff;font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap}',
     '.rp-goto a:hover{background:#1d4ed8;text-decoration:none}',
     '.rp-legacy{margin:0 0 14px}',
-    '@media(max-width:760px){.rp-todo{display:none}.rp-goto-txt{flex-basis:100%}}'
+    // 重表格页面：让每张表至少铺满内容区，列按 colgroup 比例舒展；窄于原生宽度时仍靠 .scroll 横向滚动，不破版。
+    '.scroll table{min-width:100%!important}',
+    '.scroll{max-width:none}',
+    // 两个全局动作按钮从外壳挪进报告标题栏（宽屏右上，窄屏另起一行）。
+    '.rp-head{position:relative}',
+    '.rp-head h1{padding-right:200px}',
+    '.rp-acts{position:absolute;right:0;top:-2px;display:flex;align-items:center;gap:8px;flex-wrap:wrap}',
+    '.rp-acts a{display:inline-flex;align-items:center;padding:6px 11px;border:1px solid #d8dee6;border-radius:7px;background:#fff;color:#475569;font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap;line-height:1.4}',
+    '.rp-acts a:hover{background:#f4f6fa;border-color:#c9d0da;text-decoration:none}',
+    '.rp-acts-legacy{position:static;margin:0 0 12px}',
+    '@media(max-width:760px){.rp-todo{display:none}.rp-goto-txt{flex-basis:100%}}',
+    '@media(max-width:760px){.rp-head h1{padding-right:0}.rp-acts{position:static;margin:0 0 10px}}'
   ].join('\n');
 
   function summarizeSteps(rows) {
@@ -163,6 +161,16 @@
     st.textContent = RP_CSS;
     d.head.appendChild(st);
 
+    // 把「模块进度 / 返回工具页」两个按钮注入报告标题栏右上角；早期格式无 .rp-head 时放正文最前。
+    var acts = d.createElement('div');
+    acts.setAttribute('data-rp-inject', '1');
+    acts.className = 'rp-acts';
+    acts.innerHTML = '<a data-rp-goto="1" target="_top" href="' + esc(stepsUrl()) + '">模块进度 →</a>'
+      + '<a data-rp-goto="1" target="_top" href="' + esc(new URL(backUrl, location.href).href) + '">返回工具页</a>';
+    var head = d.querySelector('.rp-head');
+    if (head) head.appendChild(acts);
+    else d.body.insertBefore(acts, d.body.firstChild);
+
     // 骨架改造前的早期报告没有模块菜单（只有 01 总表）：按正文里有没有模块名判定点亮，
     // 并在报告顶部插一条跳转条（早期报告模板不再改动）。
     var legacy = !d.querySelector('.page');
@@ -221,7 +229,6 @@
     if (r.error) { window.showMsg('msg', '读取任务失败：' + window.humanError(r.error), 'err'); return; }
     var t = r.data;
     if (!t) { window.showMsg('msg', '没找到这个任务，可能不是你提交的，或者任务号写错了', 'err'); return; }
-    meta.textContent = 'ASIN ' + t.asin + ' · 提交于 ' + window.fmtTime(t.created_at) + ' · 状态：' + t.status;
 
     await loadSteps();
     if (t.status === '失败') {
