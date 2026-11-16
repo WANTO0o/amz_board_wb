@@ -85,6 +85,16 @@
   .f05-tag { font-size:11px; padding:1px 7px; border-radius:999px; white-space:nowrap; }
   .f05-done { background:#e8f5ee; color:#0f7a4d; }
   .f05-todo { background:#fdf3e2; color:#a35b06; }
+  /* 06 润色：动作清单只读，理由可能很长必须能断行，确认勾选放在最后 */
+  .f06-wrap { background:#f8f9fb; border:1px solid #e6eaf1; border-radius:8px; padding:6px 10px 10px; max-height:340px; overflow:auto; }
+  table.f06 { width:100%; border-collapse:collapse; font-size:12.5px; min-width:600px; }
+  table.f06 th, table.f06 td { border-bottom:1px solid rgba(0,0,0,.07); padding:7px 8px; text-align:left; vertical-align:top; }
+  table.f06 th { position:sticky; top:0; background:#f8f9fb; color:#475569; font-weight:600; white-space:nowrap; }
+  .f06-reason { font-size:11.5px; color:#475569; line-height:1.5; max-width:380px; overflow-wrap:anywhere; word-break:break-word; }
+  .f06-src { font-size:11px; padding:1px 7px; border-radius:999px; white-space:nowrap; background:#e8efff; color:#1d4ed8; }
+  .f06-count { font-size:12px; color:#475569; margin:8px 0 0; line-height:1.6; }
+  .f06-check { display:flex; align-items:flex-start; gap:8px; margin:10px 0 0; font-size:12.5px; color:#334155; line-height:1.6; }
+  .f06-check input { width:auto; margin-top:3px; flex:0 0 auto; }
   .btn-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
   @media (max-width:620px) {
     .form-grid { grid-template-columns:1fr; }
@@ -314,13 +324,53 @@
       + missing + ' 家同框，图次随各家实际图片数计。';
   }
 
+  // 06 润色：动作清单只读（结论由纯函数按 rules.json 硬算），用户只确认「要不要花 1 次模型润理由」。
+  function polishForm06(step) {
+    var d = step.draft || {};
+    var acts = d.actions || [];
+    if (!d.ready) {
+      return '<div class="quota-box">还不能润色：'
+        + esc(!d.rulesReady ? '缺 rules.json 定稿，请先在步骤 1「确认判断规矩」里确认。'
+          : '步骤 1 还没出动作清单 ad-plan.json，请先确认规矩并跑出零付费动作清单。')
+        + '</div><div class="step-meta">' + esc(d.note || '') + '</div>';
+    }
+    var rows = acts.map(function (a, i) {
+      return '<tr><td>' + esc(a.order == null ? i + 1 : a.order) + '</td>'
+        + '<td>' + esc(a.keyword) + '</td>'
+        + '<td>' + esc(a.action) + '<div class="f06-reason">' + esc(a.ruleId || '') + '</div></td>'
+        + '<td>' + esc(a.evidence || '') + '</td>'
+        + '<td><div class="f06-reason">' + esc(a.reason || '') + '</div></td>'
+        + '<td><span class="f06-src">' + esc(a.reasonSource || '') + '</span></td></tr>';
+    }).join('');
+    var doneNote = d.polished
+      ? '<div class="step-meta">本任务的理由已润色过（模型 ' + esc(d.modelName || '未登记')
+        + '），不重复扣费；若规矩改过，请先在步骤 1 重跑零付费动作清单，再回来润色。</div>'
+      : '';
+    var check = d.polished ? ''
+      : '<label class="f06-check"><input type="checkbox" data-f06-confirm>'
+        + '我已看清上面 ' + acts.length + ' 条动作：这次只把理由润成一句人话，'
+        + '动作、力度与排序一字不动；理由必须原样带 ACOS／点击／自然位数字。</label>';
+    return doneNote
+      + '<div class="step-meta">' + esc(d.note || '') + '</div>'
+      + '<div class="f06-wrap"><table class="mini f06"><thead><tr>'
+      + '<th>#</th><th>关键词</th><th>动作 / 规矩</th><th>依据（投产指标＋自然位）</th>'
+      + '<th>当前理由</th><th>来源</th></tr></thead><tbody>'
+      + (rows || '<tr><td colspan="6">动作清单为空</td></tr>') + '</tbody></table></div>'
+      + '<div class="f06-count">动作 ' + esc(d.actionCount) + ' 条 · 待我判 '
+      + esc(d.pendingCount) + ' 条 · 规矩版本 ' + esc(d.rulesVersion || '未登记') + '。'
+      + esc(d.rule || '') + '</div>'
+      + '<div class="step-meta">' + esc(d.sourceNote || '') + '</div>' + check;
+  }
+
   function quotaBox(step) {
     if (step.status !== '失败') return '';
     var code = step.error_code || 'UNKNOWN';
     var isQuota = /QUOTA|PHASE1_INCOMPLETE/.test(code);
     var head = isQuota ? '额度不足 / 阶段一未完成'
       : (code === 'DECISION_INVALID' ? '确认内容不合格'
-        : (code === 'VISION_STEP_FAILED' ? '看图没跑完（只补跑缺的那家）' : '这一步失败（' + esc(code) + '）'));
+        : (code === 'VISION_STEP_FAILED' ? '看图没跑完（只补跑缺的那家）'
+          : (code === 'POLISH_PRECONDITION' ? '06 润色前置不合格（回步骤 1 重跑动作清单）'
+            : '这一步失败（' + esc(code) + '）')));
     return '<div class="quota-box">' + head + '：' + esc(step.error_reason || '') + '</div>';
   }
 
@@ -330,11 +380,15 @@
     var d = step.draft || {};
     var ready04 = k === '04/confirm' && d.ready === true && !!(d.items || []).length;
     var ready05 = k === '05/batch' && d.ready === true && !!(d.checklistNames || []).length;
-    var canWrite = ['待确认', '已完成'].indexOf(step.status) >= 0 && (k === '06/rules' || ready04 || ready05);
+    // 06 润色是可选付费步骤：只有「待确认」且动作清单齐、还没润过才给提交；已润色不重复扣费。
+    var ready06 = k === '06/polish' && d.ready === true && !!(d.actions || []).length && !d.polished;
+    var canWrite = ['待确认', '已完成'].indexOf(step.status) >= 0
+      && (k === '06/rules' || ready04 || ready05 || (ready06 && step.status === '待确认'));
     var body = '';
     if (k === '06/rules') body = rulesForm(step);
     else if (k === '04/confirm') body = confirmForm04(step);
     else if (k === '05/batch') body = batchForm05(step);
+    else if (k === '06/polish') body = polishForm06(step);
     else if (k === '04/phase1') {
       body = '<div class="step-meta">自己 ASIN ' + esc((step.draft || {}).asin || '') + '，竞对 '
         + esc(((step.draft || {}).competitorAsins || []).join('、') || '无') + '；核心词 '
@@ -356,13 +410,16 @@
         ? (step.status === '已完成' ? '改判定并重跑 04（再花 DeepSeek 1 次）' : '确认清单并点亮 04（DeepSeek 1 次）')
         : (k === '05/batch'
           ? (step.status === '已完成' ? '改清单/竞对并重跑 05（会再花视觉请求）' : '一次确认并跑完 05（只补跑未完成的家）')
-          : (step.status === '已完成' ? '保存规矩并重跑（零付费）' : '确认并出 06 动作清单（零付费）'));
+          : (k === '06/polish'
+            ? '确认并润色理由（DeepSeek 1 次，动作不变）'
+            : (step.status === '已完成' ? '保存规矩并重跑（零付费）' : '确认并出 06 动作清单（零付费）')));
       btn = '<button class="btn btn-primary btn-sm" type="button" data-approve="' + esc(step.id) + '">'
         + label + '</button>';
     } else if (step.status === '未开放') {
       var phase = (step.module === '06' ? 'P4' : 'P2');
       var text = (k === '04/confirm') ? '先完成步骤 1（竞对资料与草案）'
-        : (k === '05/batch' ? '先点亮 04（竞对对比）' : phase + ' 开放提交');
+        : (k === '05/batch' ? '先点亮 04（竞对对比）'
+          : (k === '06/polish' ? '先在步骤 1 出 06 动作清单' : phase + ' 开放提交'));
       btn = '<button class="btn btn-sm" type="button" disabled>' + text + '</button>';
     }
     return '<div class="step-card" data-step="' + esc(k) + '" data-f04-total="' + esc((d.items || []).length)
@@ -441,6 +498,7 @@
         var k = b.closest('.step-card').getAttribute('data-step');
         if (k === '04/confirm') approve04(b);
         else if (k === '05/batch') approve05(b);
+        else if (k === '06/polish') approve06Polish(b);
         else approve06(b);
       };
     });
@@ -481,6 +539,12 @@
       Array.prototype.forEach.call(card.querySelectorAll('[data-f05-reason],[data-f05-auto]'), function (el) {
         el.onchange = function () { markDirty(); };
         el.oninput = function () { markDirty(); };
+      });
+    });
+    // 06 润色：勾选确认后暂停自动刷新，避免 30 秒轮询把没提交的勾冲掉
+    Array.prototype.forEach.call(stepsBox.querySelectorAll('.step-card[data-step="06/polish"]'), function (card) {
+      Array.prototype.forEach.call(card.querySelectorAll('[data-f06-confirm]'), function (cb) {
+        cb.onchange = function () { markDirty(); };
       });
     });
   }
@@ -563,6 +627,29 @@
     }, btn);
   }
 
+  // 06 润色：只提交一个「我确认要润理由」的标记；动作清单与规矩全由后台按留底重算，不信任前端内容。
+  function approve06Polish(btn) {
+    var id = btn.getAttribute('data-approve');
+    var step = stepMap[id] || {};
+    var d = step.draft || {};
+    var card = btn.closest('.step-card');
+    var cb = card.querySelector('[data-f06-confirm]');
+    if (!cb || !cb.checked) {
+      window.showMsg('msg', '请先勾选「只润理由、动作与排序一字不动」再确认', 'err'); return;
+    }
+    if (!d.ready || !(d.actions || []).length || d.polished) {
+      window.showMsg('msg', '动作清单未就绪或已润色过，请刷新页面后再试', 'err'); return;
+    }
+    submit('approve_module_step', {
+      p_step_id: id,
+      p_decision: {
+        polish: true, reasonOnly: true, actionCount: d.actions.length,
+        rulesVersion: String(d.rulesVersion || ''),
+        confirmedFrom: '网页', confirmedAt: new Date().toISOString()
+      }
+    }, btn);
+  }
+
   function approve06(btn) {
     var card = btn.closest('.step-card');
     var raw = currentRulesJson(card);
@@ -589,7 +676,9 @@
           ? '确认已提交：工人会按你逐条确认的判定跑 04（DeepSeek 1 次），完成后报告自动点亮 04'
           : (args.p_decision && args.p_decision.competitors
             ? '05 一次确认已提交：自家整组图 → 逐家串行同框，每跑完一家立刻落盘；全部跑完自动发布并点亮 05'
-            : '确认已提交，工人会在 30 秒内执行'));
+            : (args.p_decision && args.p_decision.polish
+              ? '润色确认已提交：DeepSeek 1 次，只写理由字段；动作结论与排序一字不动，报告会自动刷新'
+              : '确认已提交，工人会在 30 秒内执行')));
       window.showMsg('msg', okMsg, 'ok');
       editing = false;
       await load();
