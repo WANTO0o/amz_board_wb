@@ -6,6 +6,31 @@
 <title>查看报告 · 关键词作战台</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="../assets/style.css">
+<style>
+  /* 模块进度：六个模块一张卡，点任意模块直接去操作台对应位置 */
+  .rp-bar { height:8px; border-radius:999px; background:#eef1f5; overflow:hidden; margin:2px 0 14px; }
+  .rp-bar i { display:block; height:100%; width:0; background:#2563eb; border-radius:999px; transition:width .3s; }
+  .rp-grid { display:grid; grid-template-columns:repeat(3,minmax(0,1fr)); gap:8px; }
+  .rp-cell {
+    display:flex; align-items:center; gap:9px; min-width:0; line-height:1.35;
+    border:1px solid var(--line); border-radius:8px; padding:9px 10px; background:#fafbfd; color:var(--text);
+  }
+  .rp-cell:hover { border-color:#2563eb; background:#f5f8ff; text-decoration:none; }
+  .rp-cell.is-todo { border-color:#f3d39a; background:#fffaf0; }
+  .rp-cell.is-fail { border-color:#f3b4ae; background:#fff5f4; }
+  .rp-cell-num { flex:0 0 auto; font:600 11px/1 ui-monospace,Menlo,monospace; color:#94a3b8; }
+  .rp-cell-main { flex:1 1 auto; min-width:0; }
+  .rp-cell-name { display:block; font-size:12.5px; font-weight:600; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rp-cell-state { display:block; font-size:11px; color:var(--muted); margin-top:2px; overflow:hidden; text-overflow:ellipsis; white-space:nowrap; }
+  .rp-cell.is-done .rp-cell-state { color:#0f7a4d; }
+  .rp-cell.is-todo .rp-cell-state { color:#a35b06; }
+  .rp-cell.is-fail .rp-cell-state { color:#b02a20; }
+  .rp-tip { margin:12px 0 0; font-size:12px; color:var(--muted); line-height:1.7; }
+  @media (max-width:620px) {
+    .rp-grid { grid-template-columns:repeat(2,minmax(0,1fr)); }
+    .card-head { flex-wrap:wrap; }
+  }
+</style>
 </head>
 <body>
 <header class="app-header" id="app-header"></header>
@@ -14,11 +39,26 @@
     <div class="card-head">
       <h2>关键词作战总表</h2>
       <span class="spacer"></span>
+      <a class="btn btn-sm" id="goto-steps" href="#">模块进度 →</a>
       <a class="btn btn-sm" id="back" href="#">返回工具页</a>
     </div>
     <p class="desc" id="meta">正在读取任务…</p>
     <p id="msg" class="msg" hidden></p>
-    <iframe id="frame" class="report-frame hidden" title="关键词作战总表" sandbox="allow-same-origin"></iframe>
+  </section>
+
+  <section class="card" id="prog-card" hidden>
+    <div class="card-head">
+      <h2>六个模块的进度</h2>
+      <span class="muted" id="prog-sum" style="font-size:12px">读取中…</span>
+    </div>
+    <div class="rp-bar"><i id="prog-fill"></i></div>
+    <div class="rp-grid" id="prog-grid"></div>
+    <p class="rp-tip" id="prog-tip"></p>
+  </section>
+
+  <section class="card">
+    <iframe id="frame" class="report-frame hidden" title="关键词作战总表"
+      sandbox="allow-same-origin allow-top-navigation-by-user-activation"></iframe>
   </section>
   <p class="foot">报告由后台工人生成，本页在线渲染，不会跳转到文件柜地址</p>
 </main>
@@ -31,18 +71,185 @@
   var C = window.APP_CONFIG;
   var frame = document.getElementById('frame');
   var meta = document.getElementById('meta');
-  var msg = document.getElementById('msg');
-  document.getElementById('back').href = window.APP_BASE + 'tool/';
   var taskId = new URLSearchParams(location.search).get('task');
   var lastRev = null;
+  var MODULES = [
+    { id: '01', name: '关键词作战总表' }, { id: '02', name: '自然位标杆' },
+    { id: '03', name: '否定词清单' },     { id: '04', name: '竞对对比' },
+    { id: '05', name: '图片与卖点诊断' }, { id: '06', name: '广告诊断与优化' }
+  ];
+  var stepState = null;    // module_steps 汇总，读不到时为 null（只按报告点亮状态降级展示）
+  var reportReady = {};    // 报告分节是否点亮，从 iframe 里的 .mi-tag.on 读，不信任数据库
 
-  frame.onload = function () {
+  document.getElementById('back').href = window.APP_BASE + 'tool/';
+
+  function esc(s) { return window.esc(s); }
+  function stepsUrl(mod) {
+    var u = new URL(window.APP_BASE + 'task/', location.href);
+    u.searchParams.set('task', taskId || '');
+    if (mod) u.searchParams.set('module', mod);
+    return u.href;
+  }
+  document.getElementById('goto-steps').href = stepsUrl();
+
+  // 注入到报告 iframe 的样式：菜单徽标 + 选中未完成模块时详情里的跳转条。
+  // 报告 HTML 是 sandbox 里的静态内容，不执行脚本，切换模块靠 CSS，所以提示条插进 pane 即可只在选中时显示。
+  var RP_CSS = [
+    '.rp-todo{flex:0 0 auto;font-size:10px;font-weight:600;padding:2px 6px;border-radius:9px;background:#fdf3e2;color:#a35b06;white-space:nowrap}',
+    '.rp-todo-fail{background:#fdeceb;color:#b02a20}',
+    '.rp-goto{display:flex;flex-wrap:wrap;align-items:center;gap:6px 10px;border:1px solid #f3d39a;background:#fffaf0;color:#8a5a08;border-radius:8px;padding:10px 12px;margin:0 0 12px;font-size:12px;line-height:1.7}',
+    '.rp-goto.is-fail{border-color:#f3b4ae;background:#fff5f4;color:#a3281c}',
+    '.rp-goto-txt{flex:1 1 260px;min-width:0}',
+    '.rp-steps{flex:1 1 100%;font-size:11.5px;color:#6b7280;overflow-wrap:anywhere;word-break:break-word}',
+    '.rp-goto a{flex:0 0 auto;display:inline-flex;align-items:center;padding:5px 12px;border-radius:7px;background:#2563eb;color:#fff;font-size:12px;font-weight:600;text-decoration:none;white-space:nowrap}',
+    '.rp-goto a:hover{background:#1d4ed8;text-decoration:none}',
+    '@media(max-width:760px){.rp-todo{display:none}.rp-goto-txt{flex-basis:100%}}'
+  ].join('\n');
+
+  function summarizeSteps(rows) {
+    var m = {};
+    MODULES.forEach(function (x) { m[x.id] = { todo: [], fail: [], done: 0, off: 0 }; });
+    (rows || []).forEach(function (s) {
+      var x = m[s.module]; if (!x) return;
+      if (s.status === '失败') x.fail.push(s);
+      else if (s.status === '待确认' || s.status === '已批准' || s.status === '执行中') x.todo.push(s);
+      else if (s.status === '已完成') x.done++;
+      else x.off++;
+    });
+    return m;
+  }
+
+  async function loadSteps() {
+    if (!taskId || !window.sb) return;
+    var r = await window.sb.from(C.STEP_TABLE || 'module_steps')
+      .select('module,step,status,error_reason').eq('task_id', taskId);
+    stepState = r.error ? null : summarizeSteps(r.data || []);
+  }
+
+  function stateOf(id) {
+    var ready = !!reportReady[id];
+    var x = stepState && stepState[id];
+    var fail = x ? x.fail.length : 0;
+    var todo = x ? x.todo.length : 0;
+    var parts = [ready ? '报告已出' : '报告未出'];
+    if (!stepState) parts.push('步骤状态读不到');
+    else {
+      if (fail) parts.push(fail + ' 项失败可重试');
+      if (todo) parts.push(todo + ' 项待确认');
+      if (!fail && !todo && x.done) parts.push('步骤全部完成');
+      if (!fail && !todo && !ready && x.off) parts.push('前置步骤未开放');
+    }
+    return {
+      ready: ready, fail: fail, todo: todo, list: x,
+      cls: fail ? 'is-fail' : ((todo || !ready) ? 'is-todo' : 'is-done'),
+      text: parts.join(' · '),
+      need: (!ready || fail > 0 || todo > 0)
+    };
+  }
+
+  function renderProgress() {
+    var card = document.getElementById('prog-card');
+    if (!taskId) { card.hidden = true; return; }
+    card.hidden = false;
+    var rows = MODULES.map(function (m) { return { m: m, s: stateOf(m.id) }; });
+    var ready = rows.filter(function (r) { return r.s.ready; }).length;
+    var pending = rows.filter(function (r) { return r.s.need; }).length;
+    document.getElementById('prog-sum').textContent = '已出 ' + ready + ' / 6 个模块';
+    document.getElementById('prog-fill').style.width = (ready / 6 * 100).toFixed(1) + '%';
+    document.getElementById('prog-grid').innerHTML = rows.map(function (r) {
+      return '<a class="rp-cell ' + r.s.cls + '" title="' + esc(r.s.text) + '" href="' + esc(stepsUrl(r.m.id)) + '">'
+        + '<span class="rp-cell-num">' + r.m.id + '</span>'
+        + '<span class="rp-cell-main"><span class="rp-cell-name">' + esc(r.m.name) + '</span>'
+        + '<span class="rp-cell-state">' + esc(r.s.text) + '</span></span></a>';
+    }).join('');
+    document.getElementById('prog-tip').textContent = pending
+      ? '还有 ' + pending + ' 个模块没出报告或有步骤待处理：点上面的模块直接跳到模块进度页的对应位置；在报告里选中该模块，详情里也有跳转入口。'
+      : '六个模块已全部出报告，步骤也都完成。报告链接始终不变，后续点亮会自动刷新这一页。';
+  }
+
+  function gotoBoxHtml(m, s) {
+    var head = s.ready
+      ? (s.fail ? '这一节已出报告，但有步骤失败' : '这一节已出报告，还有步骤待确认')
+      : '这一节还没出报告';
+    var detail = [];
+    if (s.list) {
+      s.list.fail.forEach(function (t) {
+        detail.push(t.step + ' 失败' + (t.error_reason
+          ? '：' + String(t.error_reason).slice(0, 60) : '，可单项重试'));
+      });
+      s.list.todo.forEach(function (t) { detail.push(t.step + ' ' + t.status); });
+      if (!s.list.fail.length && !s.list.todo.length && !s.ready && s.list.off) {
+        detail.push('前置步骤还没开放，先完成上一步');
+      }
+    }
+    var txt = detail.length ? detail.slice(0, 4).join('；') : '去模块进度页看当前步骤与预估调用量';
+    return '<span class="rp-goto-txt"><b>' + esc(head) + '</b>：在模块进度页确认后，后台才会跑这一步，报告会自动刷新。</span>'
+      + '<span class="rp-steps">当前进度：' + esc(txt) + '</span>'
+      + '<a data-rp-goto="1" target="_top" href="' + esc(stepsUrl(m.id)) + '">去模块进度页处理 ' + m.id + ' →</a>';
+  }
+
+  function resizeFrame() {
     try {
       var d = frame.contentDocument;
       var h = d && d.documentElement ? d.documentElement.scrollHeight : 0;
       frame.style.height = Math.max(h + 40, 520) + 'px';
     } catch (e) { frame.style.height = '900px'; }
-  };
+  }
+  function changeHandler() { setTimeout(resizeFrame, 0); }
+  function gotoHandler(e) {
+    var a = e.target && e.target.closest ? e.target.closest('a[data-rp-goto]') : null;
+    if (!a) return;
+    e.preventDefault();
+    // 处理函数在父页上下文执行：顶层导航不受 iframe sandbox 限制
+    window.location.href = a.getAttribute('href');
+  }
+
+  // 幂等：每次自动刷新、每次 srcdoc 重建后都能重跑，先清掉自己上次注入的节点
+  function decorate() {
+    var d;
+    try { d = frame.contentDocument; } catch (e) { return; }
+    if (!d || !d.body || !d.querySelector('.page')) return;
+    Array.prototype.forEach.call(d.querySelectorAll('[data-rp-inject]'), function (el) {
+      if (el.parentNode) el.parentNode.removeChild(el);
+    });
+    var st = d.createElement('style');
+    st.setAttribute('data-rp-inject', '1');
+    st.textContent = RP_CSS;
+    d.head.appendChild(st);
+
+    reportReady = {};
+    MODULES.forEach(function (m) {
+      var label = d.querySelector('.mi[for="m' + m.id + '"]');
+      var pane = d.querySelector('.pane-' + m.id);
+      reportReady[m.id] = !!(label && label.querySelector('.mi-tag.on'));
+      var s = stateOf(m.id);
+      if (!s.need) return;
+      if (label) {
+        var badge = d.createElement('span');
+        badge.setAttribute('data-rp-inject', '1');
+        badge.className = 'rp-todo' + (s.fail ? ' rp-todo-fail' : '');
+        badge.textContent = s.fail ? (s.fail + ' 项失败')
+          : (s.todo ? (s.todo + ' 项待确认') : '待出报告');
+        label.appendChild(badge);
+      }
+      if (pane) {
+        var box = d.createElement('div');
+        box.setAttribute('data-rp-inject', '1');
+        box.className = 'rp-goto' + (s.fail ? ' is-fail' : '');
+        box.innerHTML = gotoBoxHtml(m, s);
+        var title = pane.querySelector('.pane-title');
+        if (title && title.nextSibling) pane.insertBefore(box, title.nextSibling);
+        else if (title) pane.appendChild(box);
+        else pane.insertBefore(box, pane.firstChild);
+      }
+    });
+    d.addEventListener('click', gotoHandler, true);
+    d.addEventListener('change', changeHandler, true);
+    renderProgress();
+    setTimeout(resizeFrame, 0);
+  }
+
+  frame.onload = function () { decorate(); };
 
   async function load() {
     if (!taskId) { window.showMsg('msg', '网址里没有任务号，从工具页点「查看报告」进来吧', 'err'); return; }
@@ -53,13 +260,18 @@
     if (!t) { window.showMsg('msg', '没找到这个任务，可能不是你提交的，或者任务号写错了', 'err'); return; }
     meta.textContent = 'ASIN ' + t.asin + ' · 提交于 ' + window.fmtTime(t.created_at) + ' · 状态：' + t.status;
 
-    if (t.status === '失败') { window.showMsg('msg', '这个任务失败了：' + (t.error_reason || '未说明原因'), 'err'); return; }
+    await loadSteps();
+    if (t.status === '失败') {
+      reportReady = {}; renderProgress();
+      window.showMsg('msg', '这个任务失败了：' + (t.error_reason || '未说明原因'), 'err'); return;
+    }
     if (t.status !== '已完成' || !t.report_url) {
+      reportReady = {}; renderProgress();
       window.showMsg('msg', '报告还在生成中（全量 200 词一般 10–30 分钟），这页会每 30 秒自动重试一次', 'info');
       return;
     }
     var rev = Number(t.report_revision || 0);
-    if (lastRev !== null && rev === lastRev && !frame.classList.contains('hidden')) return;
+    if (lastRev !== null && rev === lastRev && !frame.classList.contains('hidden')) { decorate(); return; }
     window.hideMsg('msg');
     window.showMsg('msg', '正在取回报告…', 'info');
     try {
@@ -70,9 +282,11 @@
       frame.srcdoc = html;
       frame.classList.remove('hidden');
       lastRev = rev;
+      setTimeout(decorate, 0);
       window.hideMsg('msg');
     } catch (ex) {
       window.showMsg('msg', '报告渲染失败：' + window.humanError(ex), 'err');
+      renderProgress();
     }
   }
 

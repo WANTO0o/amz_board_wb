@@ -11,6 +11,10 @@
   .mod-group { margin: 20px 0 0; }
   .mod-group:first-child { margin-top: 4px; }
   .mod-group-auto { margin-top: 10px; }
+  /* 从报告页点具体模块跳过来：高亮定位，免得六个模块里再找一遍 */
+  .mod-group-focus { outline:2px solid #2563eb; outline-offset:3px; border-radius:10px; }
+  #focus-tip { border-left:3px solid #2563eb; background:#eef3fb; color:#334155;
+    padding:9px 12px; border-radius:6px; font-size:12px; line-height:1.7; margin:12px 0 0; }
   .mod-head {
     display:flex; align-items:center; gap:12px;
     padding:12px 14px; border:1px solid #d8e2f2; border-radius:10px; background:#eef3fb;
@@ -119,6 +123,7 @@
     <p class="desc" id="meta">正在读取任务…</p>
     <p id="msg" class="msg" hidden></p>
     <div id="report-link"></div>
+    <p id="focus-tip" hidden></p>
   </section>
 
   <section class="card">
@@ -140,6 +145,8 @@
   'use strict';
   var C = window.APP_CONFIG;
   var taskId = new URLSearchParams(location.search).get('task');
+  var focusModule = new URLSearchParams(location.search).get('module');
+  var focused = false;
   var stepsBox = document.getElementById('steps');
   var session = null;
   var editing = false;
@@ -156,6 +163,24 @@
   var STEP_ORDER = { '04/phase1': 1, '04/confirm': 2, '05/batch': 1, '06/rules': 1, '06/polish': 2 };
 
   document.getElementById('back').href = window.APP_BASE + 'tool/';
+
+  // 报告页带 &module=04 跳过来时只定位一次，免得 30 秒轮询反复把页面拽回去
+  function focusOnce() {
+    if (focused || !focusModule || !/^\d{2}$/.test(focusModule)) return;
+    var el = stepsBox.querySelector('.mod-group[data-module="' + focusModule + '"]');
+    if (!el) return;
+    focused = true;
+    el.classList.add('mod-group-focus');
+    var title = el.querySelector('.mod-title');
+    var tip = document.getElementById('focus-tip');
+    if (tip) {
+      tip.textContent = '从报告跳转过来：已定位到模块 ' + focusModule + ' '
+        + (title ? title.textContent : '')
+        + '。先看这一步的预估调用量，确认后后台才会开始跑；任何一步失败都只重试那一步。';
+      tip.hidden = false;
+    }
+    el.scrollIntoView({ block: 'center', behavior: 'smooth' });
+  }
 
   function esc(s) { return window.esc(s); }
   function tag(status) {
@@ -471,7 +496,7 @@
       var list = groups[m];
       var auto = (m === '01' || m === '02' || m === '03');
       var sum = auto ? { prog: '', cls: 'mod-sum-ok', text: '已出 · 自动' } : summaryOf(list);
-      out += '<div class="mod-group' + (auto ? ' mod-group-auto' : '') + '">'
+      out += '<div class="mod-group' + (auto ? ' mod-group-auto' : '') + '" data-module="' + m + '">'
         + '<div class="mod-head">'
         + '<span class="mod-num">' + m + '</span>'
         + '<div class="mod-title-wrap"><div class="mod-title">' + esc(names[m]) + '</div>'
@@ -711,6 +736,7 @@
       return;
     }
     render(r.data || []);
+    focusOnce();
     document.getElementById('last-refresh').textContent = '最后刷新 ' + new Date().toLocaleTimeString('zh-CN');
   }
 
