@@ -6,16 +6,55 @@
 <title>模块进度 · 关键词作战台</title>
 <link rel="stylesheet" href="../assets/style.css">
 <style>
-  .step-card { border:1px solid rgba(0,0,0,.12); border-radius:12px; padding:16px; margin:12px 0; background:#fff; }
-  .step-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
-  .step-name { font-size:15px; font-weight:500; }
-  .step-tag { font-size:12px; padding:2px 9px; border-radius:999px; border:1px solid rgba(0,0,0,.15); }
+  /* ===== 模块分组：标题条（父）＋ 缩进步骤区（子），层次一眼可分 ===== */
+  .mod-group { margin: 20px 0 0; }
+  .mod-group:first-child { margin-top: 4px; }
+  .mod-group-auto { margin-top: 10px; }
+  .mod-head {
+    display:flex; align-items:center; gap:12px;
+    padding:12px 14px; border:1px solid #d8e2f2; border-radius:10px; background:#eef3fb;
+  }
+  .mod-num {
+    flex:0 0 34px; width:34px; height:34px; border-radius:8px;
+    background:#2563eb; color:#fff; font-size:14px; font-weight:700;
+    display:flex; align-items:center; justify-content:center; letter-spacing:.5px;
+  }
+  .mod-title-wrap { flex:1; min-width:0; }
+  .mod-title { font-size:15px; font-weight:600; color:#1f2937; line-height:1.3; }
+  .mod-sub { font-size:11.5px; color:#6b7280; margin-top:3px; line-height:1.4; }
+  .mod-side { flex:0 0 auto; display:flex; align-items:center; gap:10px; }
+  .mod-progress { font-size:11.5px; color:#5f6b7f; white-space:nowrap; }
+  .mod-sum { font-size:11.5px; padding:3px 10px; border-radius:999px; white-space:nowrap; }
+  .mod-sum-ok { background:#e8f5ee; color:#0f7a4d; }
+  .mod-sum-fail { background:#fdeceb; color:#b02a20; }
+  .mod-sum-wait { background:#fdf3e2; color:#a35b06; }
+  .mod-sum-off { background:#e7ebf1; color:#475569; }
+
+  /* 子步骤区：左侧竖线＋连接短线＋整体缩进，明确从属于上面的分组 */
+  .mod-body { margin:10px 0 0 16px; padding:0 0 0 24px; border-left:2px solid #d8e2f2; }
+  .step-card {
+    position:relative; border:1px solid #e2e6ec; border-radius:8px;
+    padding:14px 16px; margin:0 0 10px; background:#fff;
+    box-shadow:0 1px 2px rgba(16,24,40,.03);
+  }
+  .step-card:last-child { margin-bottom:2px; }
+  .step-card::before {
+    content:''; position:absolute; left:-26px; top:23px; width:26px; height:2px; background:#d8e2f2;
+  }
+  .step-head { display:flex; align-items:center; gap:8px; flex-wrap:wrap; }
+  .step-seq {
+    font-size:11px; font-weight:600; color:#1d4ed8; background:#e8efff;
+    border-radius:5px; padding:2px 7px; white-space:nowrap;
+  }
+  .step-name { font-size:14px; font-weight:600; color:#1f2937; }
+  .step-tag { font-size:11.5px; padding:2px 9px; border-radius:999px; border:1px solid rgba(0,0,0,.10); }
   .st-done { background:#eaf3de; color:#27500a; }
   .st-wait { background:#faeeda; color:#633806; }
   .st-run { background:#e6f1fb; color:#0c447c; }
   .st-fail { background:#fcebeb; color:#791f1f; }
   .st-off { background:#f1efe8; color:#5f5e5a; }
   .step-meta { font-size:12px; color:#5f5e5a; margin:8px 0; line-height:1.7; }
+  .step-meta.est { color:#475569; }
   .quota-box { border-left:3px solid #a32d2d; background:#fcebeb; color:#791f1f; padding:10px 12px; border-radius:6px; font-size:13px; line-height:1.7; margin:10px 0; }
   .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; margin:10px 0; }
   .form-grid label { display:block; font-size:12px; color:#444; }
@@ -25,7 +64,13 @@
   table.mini th, table.mini td { border-bottom:1px solid rgba(0,0,0,.08); padding:6px 8px; text-align:left; vertical-align:top; }
   .draft-box { background:#f8f9fb; border-radius:8px; padding:10px 12px; font-size:12px; max-height:260px; overflow:auto; }
   .btn-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
-  @media (max-width:620px) { .form-grid { grid-template-columns:1fr; } }
+  @media (max-width:620px) {
+    .form-grid { grid-template-columns:1fr; }
+    .mod-head { flex-wrap:wrap; }
+    .mod-side { width:100%; justify-content:flex-end; }
+    .mod-body { margin-left:10px; padding-left:14px; }
+    .step-card::before { left:-16px; width:16px; }
+  }
 </style>
 </head>
 <body>
@@ -64,6 +109,16 @@
   var stepsBox = document.getElementById('steps');
   var session = null;
   var editing = false;
+
+  // 步骤显示名与先后顺序：按业务流程排，不按 step 字段的字母序
+  var STEP_META = {
+    '04/phase1':  { seq: 1, name: '竞对资料与清洗草案' },
+    '04/confirm': { seq: 2, name: '逐条确认特征清单' },
+    '05/batch':   { seq: 0, name: '一次确认并发布图片诊断' },
+    '06/rules':   { seq: 1, name: '确认判断规矩' },
+    '06/polish':  { seq: 2, name: '润色理由' }
+  };
+  var STEP_ORDER = { '04/phase1': 1, '04/confirm': 2, '05/batch': 1, '06/rules': 1, '06/polish': 2 };
 
   document.getElementById('back').href = window.APP_BASE + 'tool/';
 
@@ -170,6 +225,7 @@
 
   function renderStep(step) {
     var k = step.module + '/' + step.step;
+    var meta = STEP_META[k] || { seq: 0, name: step.step };
     var canWrite = ['待确认', '已完成'].indexOf(step.status) >= 0 && (k === '06/rules');
     var body = '';
     if (k === '06/rules') body = rulesForm(step);
@@ -191,10 +247,10 @@
       btn = '<button class="btn btn-sm" type="button" disabled>' + phase + ' 开放提交</button>';
     }
     return '<div class="step-card" data-step="' + esc(k) + '">'
-      + '<div class="step-head"><span class="step-name">' + esc(step.module) + ' · '
-      + esc({ phase1: '竞对资料与清洗草案', confirm: '逐条确认特征清单', batch: '一次确认并发布图片诊断',
-        rules: '确认判断规矩', polish: '润色理由' }[step.step] || step.step) + '</span>' + tag(step.status) + '</div>'
-      + '<div class="step-meta">' + estimateText(step.estimate) + '</div>'
+      + '<div class="step-head">'
+      + (meta.seq ? '<span class="step-seq">步骤 ' + meta.seq + '</span>' : '')
+      + '<span class="step-name">' + esc(meta.name) + '</span>' + tag(step.status) + '</div>'
+      + '<div class="step-meta est">' + estimateText(step.estimate) + '</div>'
       + quotaBox(step) + actualText(step.actual) + body
       + '<div class="btn-row">' + btn + '</div></div>';
   }
@@ -204,17 +260,52 @@
     rows.forEach(function (s) { if (groups[s.module]) groups[s.module].push(s); });
     var names = { '01': '关键词作战总表', '02': '自然位标杆', '03': '否定词清单',
       '04': '竞对对比', '05': '图片与卖点诊断', '06': '广告诊断与优化' };
+    var subs = {
+      '01': '上传后自动生成，无需确认',
+      '02': '上传后自动生成，无需确认',
+      '03': '上传后自动生成，无需确认',
+      '04': '资料清洗 → 特征清单确认 → 竞对对比',
+      '05': '自家图 ＋ 逐家竞对同框看图 → 图片诊断',
+      '06': '规矩确认 → 动作清单 → 理由润色'
+    };
+    // 分组头只报汇总，不再把各步状态用「/」拼成一长串
+    function summaryOf(list) {
+      if (!list.length) return { prog: '', cls: 'mod-sum-off', text: '暂无步骤' };
+      var st = list.map(function (s) { return s.status; });
+      var active = st.filter(function (x) { return x !== '跳过'; });
+      var done = st.filter(function (x) { return x === '已完成'; }).length;
+      var fail = st.filter(function (x) { return x === '失败'; }).length;
+      var wait = st.filter(function (x) { return x === '待确认'; }).length;
+      var prog = active.length ? done + ' / ' + active.length + ' 已完成' : '本任务不适用';
+      if (fail) return { prog: prog, cls: 'mod-sum-fail', text: fail + ' 项失败待处理' };
+      if (wait) return { prog: prog, cls: 'mod-sum-wait', text: wait + ' 项待你确认' };
+      if (active.length && done === active.length) return { prog: prog, cls: 'mod-sum-ok', text: '全部完成' };
+      return { prog: prog, cls: 'mod-sum-off', text: '后续阶段开放' };
+    }
+
     var out = '';
     Object.keys(groups).forEach(function (m) {
-      out += '<div class="step-card" style="background:#f8f9fb">'
-        + '<div class="step-head"><span class="step-name">' + m + ' ' + names[m] + '</span>'
-        + (m === '01' || m === '02' || m === '03'
-          ? '<span class="step-tag st-done">已出 · 自动</span>'
-          : tag(groups[m].length ? groups[m].map(function (s) { return s.status; }).join(' / ') : '未开放'))
+      var list = groups[m];
+      var auto = (m === '01' || m === '02' || m === '03');
+      var sum = auto ? { prog: '', cls: 'mod-sum-ok', text: '已出 · 自动' } : summaryOf(list);
+      out += '<div class="mod-group' + (auto ? ' mod-group-auto' : '') + '">'
+        + '<div class="mod-head">'
+        + '<span class="mod-num">' + m + '</span>'
+        + '<div class="mod-title-wrap"><div class="mod-title">' + esc(names[m]) + '</div>'
+        + '<div class="mod-sub">' + esc(subs[m]) + '</div></div>'
+        + '<div class="mod-side">'
+        + (sum.prog ? '<span class="mod-progress">' + esc(sum.prog) + '</span>' : '')
+        + '<span class="mod-sum ' + sum.cls + '">' + esc(sum.text) + '</span>'
         + '</div></div>';
-      groups[m].sort(function (a, b) { return a.step.localeCompare(b.step); }).forEach(function (s) {
-        out += renderStep(s);
-      });
+      if (list.length) {
+        out += '<div class="mod-body">';
+        list.slice().sort(function (a, b) {
+          return (STEP_ORDER[a.module + '/' + a.step] || 9)
+            - (STEP_ORDER[b.module + '/' + b.step] || 9);
+        }).forEach(function (s) { out += renderStep(s); });
+        out += '</div>';
+      }
+      out += '</div>';
     });
     stepsBox.innerHTML = out;
 
