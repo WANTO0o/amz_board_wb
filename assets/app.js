@@ -2,7 +2,7 @@
   'use strict';
   var C = window.APP_CONFIG || {};
   var path = location.pathname;
-  var m = path.match(/^(.*?)\/(?:tool|report)\//);
+  var m = path.match(/^(.*?)\/(?:tool|report|task)\//);
   var APP_BASE = m ? m[1] + '/' : (path.endsWith('/') ? path : path.replace(/[^/]*$/, ''));
   window.APP_BASE = APP_BASE;
 

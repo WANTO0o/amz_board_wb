@@ -33,6 +33,7 @@
   var msg = document.getElementById('msg');
   document.getElementById('back').href = window.APP_BASE + 'tool/';
   var taskId = new URLSearchParams(location.search).get('task');
+  var lastRev = null;
 
   frame.onload = function () {
     try {
@@ -56,14 +57,18 @@
       window.showMsg('msg', '报告还在生成中（全量 200 词一般 10–30 分钟），这页会每 30 秒自动重试一次', 'info');
       return;
     }
+    var rev = Number(t.report_revision || 0);
+    if (lastRev !== null && rev === lastRev && !frame.classList.contains('hidden')) return;
     window.hideMsg('msg');
     window.showMsg('msg', '正在取回报告…', 'info');
     try {
-      var res = await fetch(t.report_url, { method: 'GET' });
+      var url = t.report_url + (t.report_url.indexOf('?') >= 0 ? '&' : '?') + 'v=' + rev;
+      var res = await fetch(url, { method: 'GET', cache: 'no-store' });
       if (!res.ok) throw new Error('报告取回失败 HTTP ' + res.status);
       var html = await res.text();
       frame.srcdoc = html;
       frame.classList.remove('hidden');
+      lastRev = rev;
       window.hideMsg('msg');
     } catch (ex) {
       window.showMsg('msg', '报告渲染失败：' + window.humanError(ex), 'err');
@@ -75,9 +80,7 @@
     if (!s) return;
     window.mountHeader('查看报告');
     await load();
-    setInterval(function () {
-      if (frame.classList.contains('hidden')) load();
-    }, C.REFRESH_MS || 30000);
+    setInterval(load, C.REFRESH_MS || 30000);
   })();
 })();
 </script>

@@ -1,0 +1,316 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>模块进度 · 关键词作战台</title>
+<link rel="stylesheet" href="../assets/style.css">
+<style>
+  .step-card { border:1px solid rgba(0,0,0,.12); border-radius:12px; padding:16px; margin:12px 0; background:#fff; }
+  .step-head { display:flex; align-items:center; gap:10px; flex-wrap:wrap; }
+  .step-name { font-size:15px; font-weight:500; }
+  .step-tag { font-size:12px; padding:2px 9px; border-radius:999px; border:1px solid rgba(0,0,0,.15); }
+  .st-done { background:#eaf3de; color:#27500a; }
+  .st-wait { background:#faeeda; color:#633806; }
+  .st-run { background:#e6f1fb; color:#0c447c; }
+  .st-fail { background:#fcebeb; color:#791f1f; }
+  .st-off { background:#f1efe8; color:#5f5e5a; }
+  .step-meta { font-size:12px; color:#5f5e5a; margin:8px 0; line-height:1.7; }
+  .quota-box { border-left:3px solid #a32d2d; background:#fcebeb; color:#791f1f; padding:10px 12px; border-radius:6px; font-size:13px; line-height:1.7; margin:10px 0; }
+  .form-grid { display:grid; grid-template-columns:repeat(auto-fit,minmax(190px,1fr)); gap:10px; margin:10px 0; }
+  .form-grid label { display:block; font-size:12px; color:#444; }
+  .form-grid input, .form-grid select, .form-grid textarea { width:100%; box-sizing:border-box; margin-top:4px; }
+  textarea.rules-json { width:100%; box-sizing:border-box; min-height:170px; font-family:ui-monospace,Menlo,monospace; font-size:12px; line-height:1.5; }
+  table.mini { width:100%; border-collapse:collapse; font-size:13px; }
+  table.mini th, table.mini td { border-bottom:1px solid rgba(0,0,0,.08); padding:6px 8px; text-align:left; vertical-align:top; }
+  .draft-box { background:#f8f9fb; border-radius:8px; padding:10px 12px; font-size:12px; max-height:260px; overflow:auto; }
+  .btn-row { display:flex; gap:8px; flex-wrap:wrap; margin-top:10px; }
+  @media (max-width:620px) { .form-grid { grid-template-columns:1fr; } }
+</style>
+</head>
+<body>
+<header class="app-header" id="app-header"></header>
+<main class="wrap">
+  <section class="card">
+    <div class="card-head">
+      <h2>模块进度与确认</h2>
+      <span class="spacer"></span>
+      <a class="btn btn-sm" id="back" href="#">返回工具页</a>
+    </div>
+    <p class="desc" id="meta">正在读取任务…</p>
+    <p id="msg" class="msg" hidden></p>
+    <div id="report-link"></div>
+  </section>
+
+  <section class="card">
+    <div class="card-head">
+      <h2>六个模块</h2>
+      <span class="muted" id="last-refresh" style="font-size:12px"></span>
+      <span class="spacer"></span>
+      <button id="btn-refresh" class="btn btn-sm" type="button">手动刷新</button>
+    </div>
+    <p class="field-note">01–03 上传后自动生成。04–06 需要你在这一页确认：先看预估调用量，点确认后后台才开始花钱；任何一步失败都只重试那一步，不影响别的模块。报告链接始终不变，点亮后会自动刷新。</p>
+    <div id="steps">加载中…</div>
+  </section>
+</main>
+<script src="../assets/config.js"></script>
+<script src="../assets/supabase.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+(function () {
+  'use strict';
+  var C = window.APP_CONFIG;
+  var taskId = new URLSearchParams(location.search).get('task');
+  var stepsBox = document.getElementById('steps');
+  var session = null;
+  var editing = false;
+
+  document.getElementById('back').href = window.APP_BASE + 'tool/';
+
+  function esc(s) { return window.esc(s); }
+  function tag(status) {
+    var cls = { '已完成': 'st-done', '待确认': 'st-wait', '已批准': 'st-run', '执行中': 'st-run',
+      '失败': 'st-fail', '跳过': 'st-off', '未开放': 'st-off' }[status] || 'st-off';
+    return '<span class="step-tag ' + cls + '">' + esc(status) + '</span>';
+  }
+  function estimateText(e) {
+    if (!e) return '本步没有预估信息';
+    if (e.paid === false || e.requests === 0) return '零付费：' + esc(e.note || '不调任何外部接口');
+    var bits = [];
+    if (e.sorftimeCli) bits.push('sorftime 商品档案 ' + e.sorftimeCli + ' 次');
+    if (e.sorftimeMcp) bits.push('品类特征 MCP ' + e.sorftimeMcp + ' 次');
+    if (e.deepseek) bits.push('DeepSeek ' + e.deepseek + ' 次');
+    if (e.visionRequests) bits.push('视觉 ' + e.visionRequests + ' 请求 / ' + e.images + ' 图次');
+    return '预计：' + bits.join(' ＋ ') + (e.note ? '。' + esc(e.note) : '');
+  }
+  function actualText(a) {
+    if (!a || !Object.keys(a).length) return '';
+    var bits = [];
+    Object.keys(a).forEach(function (k) {
+      if (k === 'reportUrl' || k === 'note') return;
+      bits.push(k + '=' + (typeof a[k] === 'object' ? JSON.stringify(a[k]) : a[k]));
+    });
+    return '<div class="step-meta">实际消耗：' + esc(bits.join(' · ')) + (a.note ? '。' + esc(a.note) : '') + '</div>';
+  }
+
+  function rulesForm(step) {
+    var d = (step.draft || {});
+    var r = d.rules || {};
+    var t = r.thresholds || {};
+    var ans = r.answers || {};
+    var tp = r.trendPolicy || {};
+    var num = function (k, label, stepAttr) {
+      return '<label>' + esc(label) + '<input type="number" step="' + (stepAttr || 'any') + '" data-rule-num="' + esc(k) + '" value="' + esc(t[k]) + '"></label>';
+    };
+    return '<div class="step-meta">' + esc(d.sourceNote || '默认带出上次定稿，编辑后仍需点确认才生效') + '</div>'
+      + '<div class="form-grid">'
+      + num('topRankMax', '前三判定（名次 ≤）') + num('deepRankMin', '深位起始（名次 ≥）')
+      + num('acosLow', 'ACOS 低档（≤）') + num('acosHigh', 'ACOS 高档（>）')
+      + num('crGood', '转化好（≥）') + num('crBad', '转化差（<）')
+      + num('observeDays', '观察天数')
+      + '<label>趋势数据口径<select data-rule-text="trendMode">'
+      + '<option value="single-snapshot"' + (tp.mode === 'single-snapshot' ? ' selected' : '') + '>只有单次快照 → 待我判</option>'
+      + '<option value="multi-snapshot"' + (tp.mode === 'multi-snapshot' ? ' selected' : '') + '>有多日位次 → 启用爬升判定</option>'
+      + '</select></label>'
+      + '</div>'
+      + '<div class="form-grid">'
+      + '<label>Q1 前三降不降<textarea rows="2" data-rule-text="Q1">' + esc(ans.Q1 || '') + '</textarea></label>'
+      + '<label>Q2 深位/未上榜<textarea rows="2" data-rule-text="Q2">' + esc(ans.Q2 || '') + '</textarea></label>'
+      + '<label>Q3 ACOS 高但在爬<textarea rows="2" data-rule-text="Q3">' + esc(ans.Q3 || '') + '</textarea></label>'
+      + '</div>'
+      + '<details><summary style="cursor:pointer;font-size:12px;color:#5f5e5a">高级：查看/编辑完整规矩 JSON</summary>'
+      + '<textarea class="rules-json" data-role="rules-json" spellcheck="false">' + esc(JSON.stringify(r, null, 2)) + '</textarea></details>';
+  }
+
+  function confirmForm04(step) {
+    var d = step.draft || {};
+    var list = d.draft || [];
+    if (!list.length) return '<div class="draft-box">阶段一还没有出清洗草案（可能卡在额度），先重试上一步。</div>';
+    var rows = list.map(function (x, i) {
+      var v = String(x.verdict || '保留');
+      return '<tr><td>' + (i + 1) + '</td><td>' + esc(x.feature) + '</td>'
+        + '<td><select disabled data-f04="' + i + '">'
+        + ['保留', '剔除', '缺口'].map(function (o) {
+          return '<option' + (o === v ? ' selected' : '') + '>' + o + '</option>';
+        }).join('') + '</select></td><td>' + esc(x.reason || '') + '</td></tr>';
+    }).join('');
+    return '<div class="draft-box"><table class="mini"><thead><tr><th>#</th><th>品类特征</th><th>草案判定</th><th>理由</th></tr></thead>'
+      + '<tbody>' + rows + '</tbody></table></div>'
+      + '<div class="step-meta">' + esc(d.rule || '') + '（P2 开放逐条修改与提交）</div>';
+  }
+
+  function batchForm05(step) {
+    var d = step.draft || {};
+    var cl = d.checklist || [];
+    var rows = cl.map(function (x, i) {
+      return '<tr><td>' + (i + 1) + '</td><td>' + esc(x.name || '') + '</td><td>' + esc(String(x.source || x.intent || '')) + '</td></tr>';
+    }).join('');
+    var comps = (d.competitors || []).map(function (c) {
+      return '<tr><td>' + esc(c.asin) + '</td><td><input type="checkbox" disabled' + (c.run ? ' checked' : '') + '> 跑这家</td>'
+        + '<td><input type="text" disabled placeholder="跳过原因（选填）"></td></tr>';
+    }).join('');
+    return '<div class="step-meta">一次确认覆盖：清单 7 条 ＋ 自家图 ＋ 逐家竞对跑/跳过 ＋ 发布；内部仍逐家串行执行，任何一家失败只重试那一家。</div>'
+      + '<div class="draft-box"><table class="mini"><thead><tr><th>#</th><th>确认要素</th><th>来源</th></tr></thead><tbody>'
+      + (rows || '<tr><td colspan="3">暂无清单留底</td></tr>') + '</tbody></table></div>'
+      + '<div class="draft-box" style="margin-top:8px"><table class="mini"><thead><tr><th>竞对</th><th>是否跑</th><th>跳过原因</th></tr></thead><tbody>'
+      + (comps || '<tr><td colspan="3">这条任务没有竞对 ASIN</td></tr>') + '</tbody></table></div>'
+      + '<div class="form-grid" style="margin-top:8px">'
+      + '<label>口径差异处理<select disabled><option>' + esc(d.reconcileMode || '原始留底') + '</option><option>统一到第二步定稿</option></select></label>'
+      + '<label>全部跑完自动发布<input type="checkbox" disabled' + (d.autoPublish ? ' checked' : '') + '></label>'
+      + '</div><div class="step-meta">P3 开放提交；届时会一次点完，不再一家一家停下来确认。</div>';
+  }
+
+  function quotaBox(step) {
+    if (step.status !== '失败') return '';
+    var code = step.error_code || 'UNKNOWN';
+    var isQuota = /QUOTA|PHASE1_INCOMPLETE/.test(code);
+    return '<div class="quota-box">' + (isQuota ? '额度不足 / 阶段一未完成' : '这一步失败（' + esc(code) + '）')
+      + '：' + esc(step.error_reason || '') + '</div>';
+  }
+
+  function renderStep(step) {
+    var k = step.module + '/' + step.step;
+    var canWrite = ['待确认', '已完成'].indexOf(step.status) >= 0 && (k === '06/rules');
+    var body = '';
+    if (k === '06/rules') body = rulesForm(step);
+    else if (k === '04/confirm') body = confirmForm04(step);
+    else if (k === '05/batch') body = batchForm05(step);
+    else if (k === '04/phase1') {
+      body = '<div class="step-meta">自己 ASIN ' + esc((step.draft || {}).asin || '') + '，竞对 '
+        + esc(((step.draft || {}).competitorAsins || []).join('、') || '无') + '；核心词 '
+        + esc((step.draft || {}).coreKeyword || '') + '</div>';
+    }
+    var btn = '';
+    if (step.status === '失败') {
+      btn = '<button class="btn btn-sm" type="button" data-retry="' + esc(step.id) + '">单项重试本步骤</button>';
+    } else if (canWrite) {
+      btn = '<button class="btn btn-primary btn-sm" type="button" data-approve="' + esc(step.id) + '">'
+        + (step.status === '已完成' ? '保存规矩并重跑（零付费）' : '确认并出 06 动作清单（零付费）') + '</button>';
+    } else if (step.status === '未开放') {
+      var phase = (step.module === '04' ? 'P2' : (step.module === '05' ? 'P3' : 'P4'));
+      btn = '<button class="btn btn-sm" type="button" disabled>' + phase + ' 开放提交</button>';
+    }
+    return '<div class="step-card" data-step="' + esc(k) + '">'
+      + '<div class="step-head"><span class="step-name">' + esc(step.module) + ' · '
+      + esc({ phase1: '竞对资料与清洗草案', confirm: '逐条确认特征清单', batch: '一次确认并发布图片诊断',
+        rules: '确认判断规矩', polish: '润色理由' }[step.step] || step.step) + '</span>' + tag(step.status) + '</div>'
+      + '<div class="step-meta">' + estimateText(step.estimate) + '</div>'
+      + quotaBox(step) + actualText(step.actual) + body
+      + '<div class="btn-row">' + btn + '</div></div>';
+  }
+
+  function render(rows) {
+    var groups = { '01': [], '02': [], '03': [], '04': [], '05': [], '06': [] };
+    rows.forEach(function (s) { if (groups[s.module]) groups[s.module].push(s); });
+    var names = { '01': '关键词作战总表', '02': '自然位标杆', '03': '否定词清单',
+      '04': '竞对对比', '05': '图片与卖点诊断', '06': '广告诊断与优化' };
+    var out = '';
+    Object.keys(groups).forEach(function (m) {
+      out += '<div class="step-card" style="background:#f8f9fb">'
+        + '<div class="step-head"><span class="step-name">' + m + ' ' + names[m] + '</span>'
+        + (m === '01' || m === '02' || m === '03'
+          ? '<span class="step-tag st-done">已出 · 自动</span>'
+          : tag(groups[m].length ? groups[m].map(function (s) { return s.status; }).join(' / ') : '未开放'))
+        + '</div></div>';
+      groups[m].sort(function (a, b) { return a.step.localeCompare(b.step); }).forEach(function (s) {
+        out += renderStep(s);
+      });
+    });
+    stepsBox.innerHTML = out;
+
+    Array.prototype.forEach.call(stepsBox.querySelectorAll('[data-retry]'), function (b) {
+      b.onclick = function () { submit('retry_module_step', { p_step_id: b.getAttribute('data-retry') }, b); };
+    });
+    Array.prototype.forEach.call(stepsBox.querySelectorAll('[data-approve]'), function (b) {
+      b.onclick = function () { approve06(b); };
+    });
+    Array.prototype.forEach.call(stepsBox.querySelectorAll('[data-rule-num],[data-rule-text]'), function (el) {
+      el.onchange = function () { syncRules(el); };
+    });
+    Array.prototype.forEach.call(stepsBox.querySelectorAll('[data-role="rules-json"]'), function (el) {
+      el.onfocus = function () { editing = true; };
+      el.onblur = function () { editing = false; };
+    });
+  }
+
+  function currentRulesJson(card) {
+    var ta = card.querySelector('[data-role="rules-json"]');
+    return ta ? ta.value : '';
+  }
+  function syncRules(el) {
+    var card = el.closest('.step-card');
+    var ta = card.querySelector('[data-role="rules-json"]');
+    if (!ta) return;
+    var r;
+    try { r = JSON.parse(ta.value); } catch (e) { window.showMsg('msg', '规矩 JSON 暂时解析不了，先修好完整 JSON 再改快捷字段', 'err'); return; }
+    var key = el.getAttribute('data-rule-num') || el.getAttribute('data-rule-text');
+    if (el.getAttribute('data-rule-num')) r.thresholds[key] = Number(el.value);
+    else if (key === 'trendMode') r.trendPolicy.mode = el.value;
+    else r.answers[key] = el.value;
+    ta.value = JSON.stringify(r, null, 2);
+  }
+
+  function approve06(btn) {
+    var card = btn.closest('.step-card');
+    var raw = currentRulesJson(card);
+    var rules;
+    try { rules = JSON.parse(raw); } catch (e) { window.showMsg('msg', '规矩 JSON 格式不对：' + e.message, 'err'); return; }
+    if (!rules || !rules.rules || !rules.thresholds) {
+      window.showMsg('msg', '规矩缺 rules / thresholds，不能提交', 'err'); return;
+    }
+    submit('approve_module_step', {
+      p_step_id: btn.getAttribute('data-approve'),
+      p_decision: { rules: rules, confirmedFrom: '网页', confirmedAt: new Date().toISOString() }
+    }, btn);
+  }
+
+  async function submit(fn, args, btn) {
+    if (btn) btn.disabled = true;
+    window.showMsg('msg', '正在提交…', 'info');
+    try {
+      var r = await window.sb.rpc(fn, args);
+      if (r.error) throw r.error;
+      window.showMsg('msg', fn === 'retry_module_step' ? '已登记单项重试，工人会在 30 秒内领取（额度不足会再次提示）' : '确认已提交，工人会在 30 秒内执行', 'ok');
+      await load();
+    } catch (ex) {
+      window.showMsg('msg', '提交失败：' + window.humanError(ex), 'err');
+      if (btn) btn.disabled = false;
+    }
+  }
+
+  async function load() {
+    if (!taskId) { window.showMsg('msg', '网址里没有任务号，从工具页点「模块进度」进来', 'err'); return; }
+    if (editing) return;   // 正在编辑规矩时不被自动刷新打断
+    var t = await window.sb.from(C.TASK_TABLE).select('*').eq('id', taskId).maybeSingle();
+    if (t.error) { window.showMsg('msg', '读取任务失败：' + window.humanError(t.error), 'err'); return; }
+    if (!t.data) { window.showMsg('msg', '没找到这个任务', 'err'); return; }
+    var task = t.data;
+    document.getElementById('meta').textContent = 'ASIN ' + task.asin + ' · 提交于 '
+      + window.fmtTime(task.created_at) + ' · 状态：' + task.status + ' · 报告版本：' + (task.report_revision || 0);
+    document.getElementById('report-link').innerHTML = task.report_url
+      ? '<a class="btn btn-sm" href="' + window.APP_BASE + 'report/?task=' + encodeURIComponent(task.id) + '">查看报告（点亮后自动刷新）</a>'
+      : '<span class="muted">报告还在生成中</span>';
+
+    var r = await window.sb.from(C.STEP_TABLE || 'module_steps').select('*')
+      .eq('task_id', taskId).order('module', { ascending: true }).order('step', { ascending: true });
+    if (r.error) {
+      stepsBox.innerHTML = '<div class="quota-box">读不到模块步骤：' + esc(window.humanError(r.error))
+        + '。若是刚上线，请确认数据库脚本 05_模块步骤表与门禁.sql 已执行。</div>';
+      return;
+    }
+    render(r.data || []);
+    document.getElementById('last-refresh').textContent = '最后刷新 ' + new Date().toLocaleTimeString('zh-CN');
+  }
+
+  document.getElementById('btn-refresh').onclick = load;
+  (async function () {
+    session = await window.requireSession();
+    if (!session) return;
+    window.mountHeader('模块进度');
+    await load();
+    setInterval(load, C.REFRESH_MS || 30000);
+  })();
+})();
+</script>
+</body>
+</html>

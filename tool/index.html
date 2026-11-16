@@ -11,7 +11,7 @@
 <main class="wrap">
   <section class="card">
     <h2>新建关键词作战任务</h2>
-    <p class="desc">输入要分析的 ASIN，上传亚马逊「商品推广_搜索词」报表，工人会在后台把关键词数据补齐并生成作战总表。要出「竞对对比」模块，就加上 3–5 家竞对 ASIN（不加也能跑，报告只出 01–03）。</p>
+    <p class="desc">输入要分析的 ASIN，上传亚马逊「商品推广_搜索词」报表，工人会在后台把关键词数据补齐并生成作战总表。01–03 自动出；04–06 需要你到「模块进度」页逐项确认，全部在网页上完成，不用切后台。</p>
     <div class="row">
       <div class="col">
         <label>自己 ASIN（10 位，B0 开头）
@@ -32,7 +32,7 @@
         </label>
       </div>
     </div>
-    <div class="field-note">提交顺序：先传报表到收件箱，传成功才登记任务。填了竞对会先出 01–03 报告，竞对对比的品类特征清单清洗好草案后等你确认再点亮。</div>
+    <div class="field-note">提交顺序：先传报表到收件箱，传成功才登记任务。01–03 自动出；04–06 的确认、额度不足提醒与单项重试都在「模块进度」页完成。</div>
     <p id="msg" class="msg" hidden></p>
     <div style="margin-top:14px">
       <button id="btn-submit" class="btn btn-primary" type="button">提交任务</button>
@@ -125,6 +125,7 @@
         var reason = t.status === '失败' ? (t.error_reason || '未说明') : '—';
         var report = (t.status === '已完成' && t.report_url)
           ? '<a class="btn btn-sm" href="' + window.APP_BASE + 'report/?task=' + encodeURIComponent(t.id) + '">查看报告</a>'
+            + ' <a class="btn btn-sm btn-ghost" href="' + window.APP_BASE + 'task/?task=' + encodeURIComponent(t.id) + '">模块进度</a>'
           : '<span class="muted">—</span>';
         return '<tr><td>' + window.esc(window.fmtTime(t.created_at)) + '</td>'
           + '<td>' + window.esc(t.asin) + '</td>'
@@ -180,9 +181,7 @@
         status: '待处理'
       });
       if (ins.error) throw ins.error;
-      window.showMsg('msg', compAsins.length
-        ? '提交成功（竞对 ' + compAsins.length + ' 家）。工人接单后先出 01–03，竞对对比那节等你确认特征清单后点亮。'
-        : '提交成功，工人接单后会开始跑。下面列表等一会儿刷新就能看到进度。', 'ok');
+      window.showMsg('msg', '提交成功。01–03 由工人自动生成；04–06 请在下面列表点「模块进度」逐项确认。', 'ok');
       asinInput.value = '';
       fileInput.value = '';
       compRows.innerHTML = '';

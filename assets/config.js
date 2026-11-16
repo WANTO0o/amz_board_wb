@@ -5,6 +5,7 @@ window.APP_CONFIG = {
   "SUPABASE_PUBLISHABLE_KEY": "sb_publishable_VjvbwzKkaWBh3L2Gu1_AHA_kXiR1wqd",
   "STORAGE_BUCKET": "reports-inbox",
   "TASK_TABLE": "tasks",
+  "STEP_TABLE": "module_steps",
   "MAX_UPLOAD_BYTES": 10485760,
   "REFRESH_MS": 30000,
   "PAGE_SIZE": 10
