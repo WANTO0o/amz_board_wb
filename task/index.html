@@ -409,7 +409,7 @@
     var blocked = !d.ready
       ? '<div class="quota-box">还不能确认 05：'
         + esc(!d.m04Ready ? '04 竞对对比还没点亮，05 的图片 URL 全部来自 04 正式留底，请先完成 04 步骤 2「逐条确认特征清单」。'
-          : (!names.length ? '没有带出确认清单，可在下面点「＋ 添加一条」自己补。'
+          : (!names.length ? '没有带出图片卖点诊断维度清单，可在下面点「＋ 添加一条」自己补。'
             : '自己的主副图 URL 不可用，请回 04 检查商品档案。'))
         + '</div>'
       : '';
@@ -423,7 +423,7 @@
           }).join('') + '</div>'
         : '<div class="step-meta">本任务没有登记差评原文。换了 ASIN／竞对时，请回「提交任务」页按竞对补填，再对照它改写下面的清单；不填也能直接改清单。</div>');
     var warn = d.checklistInherited
-      ? '<div class="f05-warn">清单来源：<b>' + esc(d.checklistSource || '上次定稿')
+      ? '<div class="f05-warn">图片卖点诊断维度清单来源：<b>' + esc(d.checklistSource || '上次定稿')
         + '</b>（继承来的，不是本任务定稿）'
         + (notes.length ? '；本任务已填 ' + notes.length + ' 家差评原文，请逐条改写后再确认，避免新 ASIN 沿用旧差评。'
           : '；若换了品类，请按新竞对的差评改写后再确认。') + '</div>'
@@ -436,7 +436,7 @@
       + '<th>竞对</th><th>是否跑</th><th>跳过原因</th><th>图片</th><th>进度</th></tr></thead><tbody>'
       + (comps || '<tr><td colspan="5">04 留底里没有竞对</td></tr>') + '</tbody></table></div>'
       + '<div class="f05-wrap f05-cl-wrap" style="margin-top:8px"><table class="mini f05 f05-edit"><thead><tr>'
-      + '<th>确认清单（定稿，可编辑；改了要素名会重跑自家图）</th><th>英文说法</th>'
+      + '<th>图片卖点诊断维度清单（定稿，可编辑；改了要素名会重跑自家图）</th><th>英文说法</th>'
       + '<th>来源（写实）</th><th>买家为什么必须确认它才敢下单</th><th>操作</th>'
       + '</tr></thead><tbody data-role="f05-cl-body">'
       + (rows || '<tr><td colspan="5">暂无清单留底</td></tr>') + '</tbody></table></div>'
@@ -546,7 +546,7 @@
     div.innerHTML = '<input class="comp-asin" type="text" maxlength="10" placeholder="竞对 ASIN" autocomplete="off">'
       + '<span class="comp-role">竞对</span>'
       + '<button class="comp-del" type="button" title="删掉这行">×</button>'
-      + '<textarea class="comp-reviews" rows="3" maxlength="4000" placeholder="这家竞对的差评原文（选填）：粘贴 1–3 星评论原话，05 步骤会原样带出供你改写确认清单"></textarea>';
+      + '<textarea class="comp-reviews" rows="3" maxlength="4000" placeholder="这家竞对的差评原文（选填）：粘贴 1–3 星评论原话，05 步骤会原样带出供你改写图片卖点诊断维度清单"></textarea>';
     div.querySelector('.comp-del').onclick = function () { div.remove(); markDirty(); };
     div.querySelector('.comp-asin').oninput = markDirty;
     div.querySelector('.comp-reviews').oninput = markDirty;
@@ -834,7 +834,7 @@
     var card = btn.closest('.step-card');
     var items = collectClItems(card);
     if (!items.length) {
-      window.showMsg('msg', '确认清单一条都没有，点「＋ 添加一条」补上再提交', 'err'); return;
+      window.showMsg('msg', '图片卖点诊断维度清单一条都没有，点「＋ 添加一条」补上再提交', 'err'); return;
     }
     var err = '', seen = {};
     if (items.length > 20) err = '清单最多 20 条';
@@ -861,7 +861,7 @@
     }
     var changed = clChanged(card);
     if (changed && !window.confirm(
-      '你已经改了确认清单。\n\n要素名变化会让自家整组图重新看一遍，已有竞对同框留底也会失效、需逐家重新看图（每家校验不过最多整批重跑 2 次）。按预估：自家 6 图 1 次视觉请求，每家竞对 12 图各 1 次。只改「来源／理由」而不改要素名，不会重跑视觉，只更新报告文字。\n\n确定按这份新清单提交吗？')) {
+      '你已经改了图片卖点诊断维度清单。\n\n要素名变化会让自家整组图重新看一遍，已有竞对同框留底也会失效、需逐家重新看图（每家校验不过最多整批重跑 2 次）。按预估：自家 6 图 1 次视觉请求，每家竞对 12 图各 1 次。只改「来源／理由」而不改要素名，不会重跑视觉，只更新报告文字。\n\n确定按这份新清单提交吗？')) {
       return;
     }
     var auto = card.querySelector('[data-f05-auto]');
