@@ -597,7 +597,10 @@
     var meta = STEP_META[k] || { seq: 0, name: step.step };
     var d = step.draft || {};
     var ready04 = k === '04/confirm' && d.ready === true && !!(d.items || []).length;
-    var ready05 = k === '05/batch' && d.ready === true && !!(d.checklistNames || []).length;
+    // 05 确认按钮：04 点亮（硬前置）且自家图可用即可；清单允许为空——跨类目无继承时由用户在此页自建，
+    // approve05 已校验非空/重名/超长，后台 validateDecision05 的 editedMode 也放行自建清单。
+    var ready05 = k === '05/batch' && (d.m04Ready === true || d.ready === true)
+      && (d.selfPhotoCount || 0) > 0;
     // 06 润色是可选付费步骤：只有「待确认」且动作清单齐、还没润过才给提交；已润色不重复扣费。
     var ready06 = k === '06/polish' && d.ready === true && !!(d.actions || []).length && !d.polished;
     // 04 阶段一补录竞对后回到「待确认」，允许点确认补跑；工人会重读任务表里的新竞对。
