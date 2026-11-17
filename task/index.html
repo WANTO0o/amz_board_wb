@@ -93,7 +93,7 @@
   table.f05 textarea { width:100%; min-width:150px; box-sizing:border-box; font-size:12px; line-height:1.45; resize:vertical; }
   table.f05-edit { min-width:760px; }
   .f05-cl-wrap { max-height:430px; }
-  .f05-num { display:inline-block; min-width:18px; margin-right:5px; color:#94a3b8; font-size:11px; }
+  table.f05 td.f05-seq { width:36px; min-width:36px; color:#94a3b8; font-size:11px; text-align:center; vertical-align:middle; }
   .f05-source { font-size:11px; color:#6b7280; line-height:1.45; max-width:340px; overflow-wrap:anywhere; }
   .f05-count { font-size:12px; color:#475569; margin:8px 0 0; line-height:1.6; }
   .f05-tag { font-size:11px; padding:1px 7px; border-radius:999px; white-space:nowrap; }
@@ -307,8 +307,8 @@
   // 05 一次确认（P6）：差评原文只读展示，确认清单可逐条改写／增删；竞对仍逐家可改跑/跳过。
   function clRowHtml(x, i) {
     return '<tr data-f05-row="' + i + '">'
-      + '<td><span class="f05-num">' + (i + 1) + '</span>'
-      + '<input type="text" data-f05-name="' + i + '" maxlength="80" placeholder="确认要素名" value="' + esc(x.name || '') + '"></td>'
+      + '<td class="f05-seq">' + (i + 1) + '</td>'
+      + '<td><input type="text" data-f05-name="' + i + '" maxlength="80" placeholder="确认要素名" value="' + esc(x.name || '') + '"></td>'
       + '<td><input type="text" data-f05-en="' + i + '" maxlength="120" placeholder="英文说法" value="' + esc(x.en || '') + '"></td>'
       + '<td><textarea rows="2" maxlength="500" data-f05-source="' + i + '" placeholder="来源（写实：写清是哪条差评／哪张主图共性）">' + esc(x.source || '') + '</textarea></td>'
       + '<td><textarea rows="2" maxlength="500" data-f05-why="' + i + '" placeholder="买家为什么必须确认它才敢下单">' + esc(x.why || '') + '</textarea></td>'
@@ -345,7 +345,7 @@
     if (!body) return;
     body.innerHTML = items.length
       ? items.map(clRowHtml).join('')
-      : '<tr><td colspan="5">清单为空，点「＋ 添加一条」补一条</td></tr>';
+      : '<tr><td colspan="6">清单为空，点「＋ 添加一条」补一条</td></tr>';
     bindClEvents(card);
     f05Count(card);
   }
@@ -435,11 +435,12 @@
       + '<div class="f05-wrap"><table class="mini f05"><thead><tr>'
       + '<th>竞对</th><th>是否跑</th><th>跳过原因</th><th>图片</th><th>进度</th></tr></thead><tbody>'
       + (comps || '<tr><td colspan="5">04 留底里没有竞对</td></tr>') + '</tbody></table></div>'
+      + '<div class="step-meta" style="margin-top:10px"><b>图片卖点诊断维度清单</b></div>'
       + '<div class="f05-wrap f05-cl-wrap" style="margin-top:8px"><table class="mini f05 f05-edit"><thead><tr>'
-      + '<th>图片卖点诊断维度清单（定稿，可编辑；改了要素名会重跑自家图）</th><th>英文说法</th>'
+      + '<th>序号</th><th>要素名</th><th>英文说法</th>'
       + '<th>来源（写实）</th><th>买家为什么必须确认它才敢下单</th><th>操作</th>'
       + '</tr></thead><tbody data-role="f05-cl-body">'
-      + (rows || '<tr><td colspan="5">暂无清单留底</td></tr>') + '</tbody></table></div>'
+      + (rows || '<tr><td colspan="6">暂无清单留底</td></tr>') + '</tbody></table></div>'
       + '<div class="btn-row" style="margin-top:8px">'
       + '<button class="btn btn-sm" type="button" data-f05-add>＋ 添加一条</button>'
       + '<button class="btn btn-sm btn-ghost" type="button" data-f05-reset>恢复带出的清单</button></div>'
