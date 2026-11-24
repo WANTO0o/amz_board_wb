@@ -20,7 +20,8 @@
       <span class="spacer"></span>
       <a class="btn btn-sm" id="btn-back" href="../">返回用户洞察</a>
     </div>
-    <iframe id="frame" class="report-frame hidden" title="用户洞察报告"></iframe>
+    <iframe id="frame" class="report-frame hidden" title="用户洞察报告"
+      sandbox="allow-same-origin allow-top-navigation-by-user-activation"></iframe>
   </section>
   <p class="foot">报告由后台工人生成并存文件柜，本页在线渲染</p>
 </main>
@@ -52,9 +53,19 @@
       return;
     }
     var url = /^https?:\/\//i.test(p) ? p : REPORT_BASE + String(p).replace(/^\/+/, '');
-    msg.hidden = true;
-    frame.src = url;
-    frame.classList.remove('hidden');
+    // 报告对象带 Content-Disposition:attachment（OSS bucket 级规则），直接 src 会触发下载。
+    // 与现有工具报告页一致：fetch 取回文本塞进 srcdoc，走内联渲染，不经浏览器下载逻辑。
+    window.showMsg('msg', '正在取回报告…', 'info');
+    try {
+      var res = await fetch(url, { method: 'GET', cache: 'no-store' });
+      if (!res.ok) throw new Error('报告取回失败 HTTP ' + res.status);
+      var html = await res.text();
+      frame.srcdoc = html;
+      frame.classList.remove('hidden');
+      window.hideMsg('msg');
+    } catch (ex) {
+      window.showMsg('msg', '报告渲染失败：' + window.humanError(ex), 'err');
+    }
   }
 
   if (!window.requireSession) return;
