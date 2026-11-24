@@ -15,6 +15,6 @@ window.APP_CONFIG = {
 // 新增模块只加一条并把 enabled 设为 true；enabled=false 的模块不在任何入口出现。
 window.APP_MODULES = [
   { "id": "keyword", "name": "关键词作战台", "path": "tool/", "aliases": ["task/", "report/"], "desc": "上传广告报表，生成关键词诊断与动作清单", "enabled": true },
-  { "id": "voc", "name": "用户洞察", "path": "voc/", "aliases": ["voc/report/"], "desc": "输入 ASIN，逐条理解真实评论中的需求、场景与购买动机", "enabled": true },
+  { "id": "voc", "name": "用户洞察", "path": "voc/", "aliases": ["voc/report/"], "desc": "输入 ASIN，逐条理解真实评论中的需求、场景与购买动机", "enabled": false },
   { "id": "search", "name": "搜索词分析看板", "path": "search/", "desc": "搜索词趋势与流量结构看板", "enabled": false }
 ];
