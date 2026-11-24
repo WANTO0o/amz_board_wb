@@ -3,15 +3,16 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>登录 · 关键词作战台</title>
+<title>登录 · AMZ增长工作室</title>
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="assets/style.css">
 </head>
-<body class="login-body">
-<main class="login-wrap">
+<body class="login-page">
+<header class="app-header" id="app-header"></header>
+<main class="wrap">
   <section class="card login-card">
-    <h1>关键词作战台</h1>
-    <p class="muted">登录后提交 ASIN 和广告报表，生成关键词作战总表</p>
+    <h1>登录 AMZ增长工作室</h1>
+    <p class="muted">一个账号，进入所有工具</p>
     <div class="tabs">
       <button id="tab-login" class="tab active" type="button">登录</button>
       <button id="tab-signup" class="tab" type="button">注册</button>
@@ -29,7 +30,6 @@
     </form>
     <p id="fatal" class="msg msg-err" hidden></p>
   </section>
-  <p class="foot">登录、任务与报告都由 Supabase 门禁保管</p>
 </main>
 <script src="assets/config.js"></script>
 <script src="assets/supabase.js"></script>
@@ -37,13 +37,19 @@
 <script>
 (function () {
   'use strict';
+  var requested = new URLSearchParams(location.search).get('next') || '';
+  var next = window.safeNext ? (window.safeNext(requested) || '') : '';
+  if (!next) next = (window.APP_BASE || '/') + 'home/';
+
+  if (window.mountHeader) window.mountHeader('');
+
   var mode = 'login';
   var form = document.getElementById('form');
   var email = document.getElementById('email');
   var password = document.getElementById('password');
   var submit = document.getElementById('submit');
-  var hint = document.getElementById('hint');
   var err = document.getElementById('err');
+  var hint = document.getElementById('hint');
 
   function setMode(m) {
     mode = m;
@@ -59,7 +65,7 @@
 
   if (window.sb) {
     window.sb.auth.getSession().then(function (r) {
-      if (r.data && r.data.session) location.replace(window.APP_BASE + 'tool/');
+      if (r.data && r.data.session) location.replace(next);
     });
   }
 
@@ -77,13 +83,13 @@
       if (mode === 'signup') {
         var r = await window.sb.auth.signUp({ email: mail, password: pwd });
         if (r.error) throw r.error;
-        if (r.data && r.data.session) { location.replace(window.APP_BASE + 'tool/'); return; }
+        if (r.data && r.data.session) { location.replace(next); return; }
         setMode('login');
         window.showMsg('hint', '注册成功。去邮箱点一下确认链接，再回来登录。', 'ok');
       } else {
         var s = await window.sb.auth.signInWithPassword({ email: mail, password: pwd });
         if (s.error) throw s.error;
-        location.replace(window.APP_BASE + 'tool/');
+        location.replace(next);
       }
     } catch (ex) {
       window.showMsg('err', window.humanError(ex), 'err');

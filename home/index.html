@@ -1,0 +1,42 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>工作台 · AMZ增长工作室</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../assets/style.css">
+</head>
+<body>
+<header class="app-header" id="app-header"></header>
+<main class="wrap">
+  <section class="card">
+    <h2>工作台</h2>
+    <p class="desc">选择一个工具开始。顶部菜单可以随时切换模块。</p>
+    <p id="fatal" class="msg msg-err" hidden></p>
+    <div class="wb-grid" id="wb-grid"></div>
+  </section>
+</main>
+<script src="../assets/config.js"></script>
+<script src="../assets/supabase.js"></script>
+<script src="../assets/app.js"></script>
+<script>
+(function () {
+  'use strict';
+  if (!window.requireSession) return;
+  window.requireSession().then(function (session) {
+    if (!session) return;
+    if (window.mountHeader) window.mountHeader('工作台');
+    var mods = (window.APP_MODULES || []).filter(function (x) { return x.enabled !== false; });
+    var base = window.APP_BASE || '/';
+    document.getElementById('wb-grid').innerHTML = mods.map(function (x) {
+      return '<a class="wb-card" href="' + base + x.path + '">'
+        + '<span class="wb-name">' + window.esc(x.name) + '</span>'
+        + '<span class="wb-desc">' + window.esc(x.desc || '') + '</span>'
+        + '<span class="wb-go">进入 →</span></a>';
+    }).join('');
+  });
+})();
+</script>
+</body>
+</html>

@@ -1,9 +1,14 @@
 (function () {
   'use strict';
   var C = window.APP_CONFIG || {};
-  var path = location.pathname;
-  var m = path.match(/^(.*?)\/(?:tool|report|task)\//);
-  var APP_BASE = m ? m[1] + '/' : (path.endsWith('/') ? path : path.replace(/[^/]*$/, ''));
+
+  // 以 app.js 自身路径推导站点根路径，新增模块页不用改这里。
+  var APP_BASE = '/';
+  Array.prototype.forEach.call(document.getElementsByTagName('script'), function (s) {
+    if (/\/assets\/app\.js(?:[?#].*)?$/.test(s.src || '')) {
+      APP_BASE = new URL(s.src, location.href).pathname.replace(/assets\/app\.js$/, '');
+    }
+  });
   window.APP_BASE = APP_BASE;
 
   if (!window.supabase || !C.SUPABASE_URL || !C.SUPABASE_PUBLISHABLE_KEY) {
@@ -44,10 +49,26 @@
     });
   };
 
+  // 登录回跳只允许本站、本站根路径下的地址，避免开放跳转。
+  window.safeNext = function (v) {
+    if (!v || /^\/\//.test(v)) return '';
+    try {
+      var u = new URL(v, location.href);
+      if (u.origin !== location.origin) return '';
+      var base = new URL(APP_BASE, location.href).pathname;
+      if (u.pathname.indexOf(base) !== 0) return '';
+      return u.pathname + u.search + u.hash;
+    } catch (e) { return ''; }
+  };
+
   window.requireSession = async function () {
     var r = await sb.auth.getSession();
     var s = r.data && r.data.session;
-    if (!s) { location.replace(APP_BASE); return null; }
+    if (!s) {
+      var back = location.pathname + location.search;
+      location.replace(APP_BASE + '?next=' + encodeURIComponent(back));
+      return null;
+    }
     return s;
   };
 
@@ -62,20 +83,40 @@
   window.mountHeader = function (title) {
     var h = document.getElementById('app-header');
     if (!h) return;
-    var name = C.APP_NAME || '关键词作战台';
-    h.innerHTML = '<div class="hd-inner"><a class="brand" href="' + APP_BASE + '">' + window.esc(name) + '</a>'
-      + '<span class="hd-sub">' + window.esc(title || '') + '</span>'
-      + '<span class="hd-spacer"></span><span class="hd-user" id="hd-user"></span>'
-      + '<button class="btn btn-ghost btn-sm" id="btn-logout" type="button">退出登录</button></div>';
+    var mods = (window.APP_MODULES || []).filter(function (x) { return x.enabled !== false; });
+    var links = mods.map(function (x) {
+      var paths = [x.path].concat(x.aliases || []);
+      var active = paths.some(function (p) {
+        return location.pathname.indexOf(new URL(APP_BASE + p, location.href).pathname) === 0;
+      });
+      return '<a class="hd-link' + (active ? ' active' : '') + '" href="' + APP_BASE + x.path + '">'
+        + window.esc(x.name) + '</a>';
+    }).join('');
+    h.innerHTML = '<div class="hd-inner">'
+      + '<a class="brand" href="' + APP_BASE + 'home/">' + window.esc(C.APP_NAME || 'AMZ增长工作室') + '</a>'
+      + '<nav class="hd-nav" aria-label="模块菜单">' + links + '</nav>'
+      + '<span class="hd-spacer"></span>'
+      + (title ? '<span class="hd-sub">' + window.esc(title) + '</span>' : '')
+      + '<span class="hd-user" id="hd-user"></span><span id="hd-auth-slot"></span></div>';
+
     sb.auth.getUser().then(function (r) {
       var u = r.data && r.data.user;
       var el = document.getElementById('hd-user');
       if (el && u) el.textContent = u.email || '';
     });
-    document.getElementById('btn-logout').onclick = async function () {
-      await sb.auth.signOut();
-      location.replace(APP_BASE);
-    };
+    sb.auth.getSession().then(function (r) {
+      var slot = document.getElementById('hd-auth-slot');
+      if (!slot) return;
+      if (!(r.data && r.data.session)) {
+        slot.innerHTML = '<a class="btn btn-ghost btn-sm" href="' + APP_BASE + '">登录</a>';
+        return;
+      }
+      slot.innerHTML = '<button class="btn btn-ghost btn-sm" id="btn-logout" type="button">退出登录</button>';
+      document.getElementById('btn-logout').onclick = async function () {
+        await sb.auth.signOut();
+        location.replace(APP_BASE);
+      };
+    });
   };
 
   window.showMsg = function (id, text, kind) {

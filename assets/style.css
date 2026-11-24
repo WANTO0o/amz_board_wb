@@ -114,3 +114,28 @@ tr:last-child td { border-bottom: none; }
 @keyframes sp { to { transform: rotate(360deg); } }
 .report-frame { width: 100%; min-height: 520px; border: 1px solid var(--line); border-radius: 8px; background: #fff; }
 .foot { color: var(--muted); font-size: 12px; text-align: center; padding: 16px 0 28px; }
+
+/* 全局顶部菜单：各页面共用 */
+.hd-nav { display: flex; align-items: center; gap: 4px; margin-left: 8px; }
+.hd-link { padding: 6px 10px; border-radius: 6px; color: var(--muted); font-size: 13px; white-space: nowrap; }
+.hd-link:hover { color: var(--brand); background: var(--gray-bg); text-decoration: none; }
+.hd-link.active { color: var(--brand); background: #e8efff; font-weight: 600; }
+@media (max-width: 620px) {
+  .hd-inner { padding: 12px 16px; gap: 8px; }
+  .hd-nav { margin-left: 0; overflow-x: auto; }
+  .hd-link { padding: 6px 8px; font-size: 12px; }
+  .hd-user { display: none; }
+}
+
+/* 首页：只放登录 */
+.login-page { min-height: 100vh; display: flex; flex-direction: column; }
+.login-page .wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: 48px 20px; }
+.login-page .login-card { width: 100%; max-width: 400px; margin: 0; }
+
+/* 工作台：入口由模块配置生成，只展示模块名与一句话 */
+.wb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
+.wb-card { display: flex; flex-direction: column; gap: 8px; padding: 20px; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.wb-card:hover { border-color: var(--brand); text-decoration: none; }
+.wb-name { font-size: 16px; font-weight: 600; color: var(--text); }
+.wb-desc { flex: 1; font-size: 13px; color: var(--muted); }
+.wb-go { font-size: 13px; font-weight: 600; color: var(--brand); }
