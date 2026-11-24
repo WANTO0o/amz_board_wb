@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>用户洞察报告 · AMZ增长工作室</title>
+<link rel="icon" href="data:,">
+<link rel="stylesheet" href="../../assets/style.css">
+<style>
+  .wrap { max-width: none; padding-left: 20px; padding-right: 20px; }
+</style>
+</head>
+<body>
+<header class="app-header" id="app-header"></header>
+<main class="wrap">
+  <p id="msg" class="msg" hidden></p>
+  <section class="card">
+    <div class="card-head">
+      <h2 id="report-title">用户洞察报告</h2>
+      <span class="spacer"></span>
+      <a class="btn btn-sm" id="btn-back" href="../">返回用户洞察</a>
+    </div>
+    <iframe id="frame" class="report-frame hidden" title="用户洞察报告"></iframe>
+  </section>
+  <p class="foot">报告由后台工人生成并存文件柜，本页在线渲染</p>
+</main>
+<script src="../../assets/config.js"></script>
+<script src="../../assets/supabase.js"></script>
+<script src="../../assets/app.js"></script>
+<script>
+(function () {
+  'use strict';
+  var TABLE = 'voc_tasks';
+  // 报告桶公开域名：报告 HTML 由工人存到 voc/ 目录，路径写回任务表 report_path。
+  // 模块 0 没有报告；这段先把「按任务表取路径 → 加载报告」的壳立着。
+  var REPORT_BASE = 'https://tools-amz-board-wb.oss-cn-shenzhen.aliyuncs.com/';
+  var taskId = new URLSearchParams(location.search).get('task');
+  var frame = document.getElementById('frame');
+  var msg = document.getElementById('msg');
+
+  async function load() {
+    if (!taskId) { window.showMsg('msg', '缺少任务号，请从任务列表点「打开报告」', 'err'); return; }
+    if (!window.sb) { window.showMsg('msg', '页面配置没加载好，请刷新重试', 'err'); return; }
+    var r = await window.sb.from(TABLE).select('asins,status,report_path')
+      .eq('id', taskId).eq('user_id', (await window.sb.auth.getUser()).data.user.id).maybeSingle();
+    if (r.error) { window.showMsg('msg', window.humanError(r.error), 'err'); return; }
+    if (!r.data) { window.showMsg('msg', '找不到这条任务，或不是你的任务', 'err'); return; }
+    if (r.data.asins) document.getElementById('report-title').textContent = '用户洞察报告 · ' + r.data.asins;
+    var p = r.data.report_path;
+    if (!p) {
+      window.showMsg('msg', '这份任务的报告还没生成（当前状态：' + (r.data.status || '—') + '）。模块 3 接通后工人会把报告放进文件柜，这里会自动打开。', 'info');
+      return;
+    }
+    var url = /^https?:\/\//i.test(p) ? p : REPORT_BASE + String(p).replace(/^\/+/, '');
+    msg.hidden = true;
+    frame.src = url;
+    frame.classList.remove('hidden');
+  }
+
+  if (!window.requireSession) return;
+  window.requireSession().then(function (s) {
+    if (!s) return;
+    if (window.mountHeader) window.mountHeader('用户洞察报告');
+    load();
+  });
+})();
+</script>
+</body>
+</html>
