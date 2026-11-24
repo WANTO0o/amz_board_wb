@@ -7,23 +7,17 @@
 <link rel="icon" href="data:,">
 <link rel="stylesheet" href="../../assets/style.css">
 <style>
-  .wrap { max-width: none; padding-left: 20px; padding-right: 20px; }
+  /* 报告占满整个视口（顶部只留全站菜单），不再是带边框/标题栏的小窗 */
+  .wrap.report-full { max-width: none; margin: 0; padding: 0; }
+  .report-full .report-frame { display: block; width: 100%; min-height: 0; border: 0; border-radius: 0; background: #fff; }
 </style>
 </head>
 <body>
 <header class="app-header" id="app-header"></header>
-<main class="wrap">
+<main class="wrap report-full">
   <p id="msg" class="msg" hidden></p>
-  <section class="card">
-    <div class="card-head">
-      <h2 id="report-title">用户洞察报告</h2>
-      <span class="spacer"></span>
-      <a class="btn btn-sm" id="btn-back" href="../">返回用户洞察</a>
-    </div>
-    <iframe id="frame" class="report-frame hidden" title="用户洞察报告"
-      sandbox="allow-same-origin allow-top-navigation-by-user-activation"></iframe>
-  </section>
-  <p class="foot">报告由后台工人生成并存文件柜，本页在线渲染</p>
+  <iframe id="frame" class="report-frame hidden" title="用户洞察报告"
+    sandbox="allow-same-origin allow-top-navigation-by-user-activation"></iframe>
 </main>
 <script src="../../assets/config.js"></script>
 <script src="../../assets/supabase.js"></script>
@@ -39,6 +33,15 @@
   var frame = document.getElementById('frame');
   var msg = document.getElementById('msg');
 
+  // 报告铺满视口：高度 = 视口高 − 顶部菜单高；窗口缩放时重算。
+  function fitFrame() {
+    if (frame.classList.contains('hidden')) return;
+    var hd = document.getElementById('app-header');
+    var hdH = hd ? hd.offsetHeight : 0;
+    frame.style.height = Math.max(240, window.innerHeight - hdH) + 'px';
+  }
+  window.addEventListener('resize', fitFrame);
+
   async function load() {
     if (!taskId) { window.showMsg('msg', '缺少任务号，请从任务列表点「打开报告」', 'err'); return; }
     if (!window.sb) { window.showMsg('msg', '页面配置没加载好，请刷新重试', 'err'); return; }
@@ -46,7 +49,7 @@
       .eq('id', taskId).eq('user_id', (await window.sb.auth.getUser()).data.user.id).maybeSingle();
     if (r.error) { window.showMsg('msg', window.humanError(r.error), 'err'); return; }
     if (!r.data) { window.showMsg('msg', '找不到这条任务，或不是你的任务', 'err'); return; }
-    if (r.data.asins) document.getElementById('report-title').textContent = '用户洞察报告 · ' + r.data.asins;
+    if (r.data.asins) document.title = '用户洞察报告 · ' + r.data.asins + ' · AMZ增长工作室';
     var p = r.data.report_path;
     if (!p) {
       window.showMsg('msg', '这份任务的报告还没生成（当前状态：' + (r.data.status || '—') + '）。模块 3 接通后工人会把报告放进文件柜，这里会自动打开。', 'info');
@@ -62,6 +65,8 @@
       var html = await res.text();
       frame.srcdoc = html;
       frame.classList.remove('hidden');
+      fitFrame();
+      requestAnimationFrame(fitFrame);   // 菜单挂载后高度可能微调，下一帧再算一次
       window.hideMsg('msg');
     } catch (ex) {
       window.showMsg('msg', '报告渲染失败：' + window.humanError(ex), 'err');
