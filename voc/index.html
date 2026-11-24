@@ -167,6 +167,18 @@
   var STATUS_MAP = { '排队中':'tag-wait', '抓评论':'tag-run', '标注中':'tag-run', '生成报告':'tag-run', '完成':'tag-done', '失败':'tag-fail' };
   function tag(s) { return '<span class="tag ' + (STATUS_MAP[s] || 'tag-wait') + '">' + window.esc(s || '—') + '</span>'; }
 
+  // created_at 是 UTC（Supabase timestamptz），转成北京时间（UTC+8）显示到分钟。
+  // 只做时间展示，不参与任何判定；解析失败回退原串，不影响列表。
+  function fmtCreatedAt(iso) {
+    if (!iso) return '—';
+    var d = new Date(iso);
+    if (isNaN(d.getTime())) return String(iso).slice(0, 16);
+    var b = new Date(d.getTime() + 8 * 3600 * 1000);
+    function p(n) { return n < 10 ? '0' + n : '' + n; }
+    return b.getUTCFullYear() + '-' + p(b.getUTCMonth() + 1) + '-' + p(b.getUTCDate()) +
+      ' ' + p(b.getUTCHours()) + ':' + p(b.getUTCMinutes());
+  }
+
   async function loadTasks() {
     if (!session) return;
     var r = await window.sb.from(TABLE).select('*')
@@ -193,7 +205,8 @@
         + '<div class="voc-task-head"><span class="voc-task-asin">' + window.esc(t.asins.split('+').join(' + ')) + '</span>' + tag(t.status) + '</div>'
         + '<div class="voc-task-meta"><span>站点：' + window.esc(t.site) + '</span>'
         + '<span>每个 ASIN：' + t.review_target + ' 条</span>'
-        + '<span>范围：' + (t.review_scope === 'asin_only' ? '仅本 ASIN' : '含变体评论') + '</span></div>'
+        + '<span>范围：' + (t.review_scope === 'asin_only' ? '仅本 ASIN' : '含变体评论') + '</span>'
+        + '<span>生成时间：' + fmtCreatedAt(t.created_at) + '</span></div>'
         + '<div class="voc-progress-line"><span>目标总量：' + total + ' 条</span>'
         + '<span>标注进度：' + (t.annotated_count || 0) + '/' + total + '</span></div>'
         + '<div class="voc-bar"><i style="width:' + pct + '%"></i></div>'
