@@ -130,7 +130,14 @@ tr:last-child td { border-bottom: none; }
 /* 首页：只放登录 */
 .login-page { min-height: 100vh; display: flex; flex-direction: column; }
 .login-page .wrap { flex: 1; display: flex; align-items: center; justify-content: center; padding: 48px 20px; }
-.login-page .login-card { width: 100%; max-width: 400px; margin: 0; }
+.login-page .login-card { width: 100%; max-width: 540px; margin: 0; padding: 30px 38px; }
+.login-page .login-card h1 { font-size: 24px; }
+.login-page .login-card > .muted { margin-bottom: 14px; }
+.login-page .login-card .tabs { margin-bottom: 14px; }
+.login-page .login-card label { margin-bottom: 10px; }
+.login-page .login-card input { margin-top: 5px; padding: 11px 13px; }
+.login-page .login-card .btn-block { padding: 11px 16px; }
+@media (max-width: 480px) { .login-page .login-card { padding: 26px 22px; } }
 
 /* 工作台：入口由模块配置生成，只展示模块名与一句话 */
 .wb-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: 16px; }
